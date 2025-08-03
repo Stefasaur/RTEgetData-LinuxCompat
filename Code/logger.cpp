@@ -16,7 +16,9 @@
 #include "gdb_defs.h"
 #include "gdb_lib.h"
 #include "cmd_line.h"
-#include <share.h>
+#ifdef _WIN32
+    #include <share.h>
+#endif
 
 
 /*---------------- GLOBAL VARIABLES ------------------*/
@@ -74,7 +76,11 @@ void create_log_file(const char * file_name)
     {
         // Open the file for reading and writing so that it can be read while it
         // is being written in case it is being opened by a log viewer software.
+#ifdef _WIN32
         log_output = _fsopen(file_name, "w+", _SH_DENYNO);
+#else
+        log_output = fopen(file_name, "w+");
+#endif
 
         if (log_output == NULL)
         {
@@ -92,8 +98,15 @@ void create_log_file(const char * file_name)
 
 void start_timer(LARGE_INTEGER * timer)
 {
+#ifdef _WIN32
     (void)QueryPerformanceFrequency(&Frequency);
     (void)QueryPerformanceCounter(timer);
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    timer->QuadPart = ts.tv_sec * 1000000000LL + ts.tv_nsec;
+    Frequency.QuadPart = 1000000000LL; // nanoseconds
+#endif
 }
 
 
@@ -158,7 +171,13 @@ void log_timing(const char * text, LARGE_INTEGER * start_timer)
     if (logging_enabled | parameters.debug_mode)
     {
         LARGE_INTEGER end_timer;
+#ifdef _WIN32
         (void)QueryPerformanceCounter(&end_timer);
+#else
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        end_timer.QuadPart = ts.tv_sec * 1000000000LL + ts.tv_nsec;
+#endif
         LARGE_INTEGER elapsed;
         elapsed.QuadPart = end_timer.QuadPart - start_timer->QuadPart;
 
@@ -190,10 +209,16 @@ void log_wsock_error(const char * text)
     }
 
     // Get the last socket error
-    int sock_err = GetLastError();
+#ifdef _WIN32
+    int sock_err = WSAGetLastError();
     fprintf(log_output, "%s - Winsock error %d", text, sock_err);
+#else
+    int sock_err = errno;
+    fprintf(log_output, "%s - Socket error %d", text, sock_err);
+#endif
 
     // Log specific error messages based on the error code
+#ifdef _WIN32
     switch (sock_err)
     {
     case WSAETIMEDOUT:
@@ -231,6 +256,47 @@ void log_wsock_error(const char * text)
     default:
         break;
     }
+#else
+    switch (sock_err)
+    {
+    case ETIMEDOUT:
+        fprintf(log_output, " - (time-out). ");
+        break;
+
+    case ECONNRESET:
+        fprintf(log_output, " - (connection reset by peer). ");
+        break;
+
+    case ECONNABORTED:
+        fprintf(log_output, " - (software caused connection abort). ");
+        break;
+
+    case ECONNREFUSED:
+        fprintf(log_output, " - (connection refused). ");
+        break;
+
+    case EADDRINUSE:
+        fprintf(log_output, " - (address already in use). ");
+        break;
+
+    case ENETUNREACH:
+        fprintf(log_output, " - (network is unreachable). ");
+        break;
+
+    case EISCONN:
+        fprintf(log_output, " - (transport endpoint is already connected). ");
+        break;
+
+    case EHOSTDOWN:
+        fprintf(log_output, " - (host is down). ");
+        break;
+
+    default:
+        break;
+    }
+#endif
+
+    fprintf(log_output, "\n");
 
     if (logging_to_file())
     {
@@ -252,7 +318,13 @@ double time_elapsed(LARGE_INTEGER * start_timer)
     LARGE_INTEGER Elapsed;
     LARGE_INTEGER stop_timer;
 
+#ifdef _WIN32
     (void)QueryPerformanceCounter(&stop_timer);
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    stop_timer.QuadPart = ts.tv_sec * 1000000000LL + ts.tv_nsec;
+#endif
     // Calculate the elapsed time
     Elapsed.QuadPart = stop_timer.QuadPart - start_timer->QuadPart;
 

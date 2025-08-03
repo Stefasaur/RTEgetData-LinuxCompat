@@ -33,10 +33,12 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <cctype>
 #include "gdb_lib.h"
 #include "logger.h"
 #include "cmd_line.h"
 #include "RTEgetData.h"
+#include "platform_compat.h"
 
 
  /*---------------- GLOBAL VARIABLES ------------------*/
@@ -108,7 +110,11 @@ int gdb_connect(unsigned short gdb_port)
     if (res != RTE_OK)
     {
         gdb_socket_cleanup();
+#ifdef _WIN32
         _fcloseall();
+#else
+        // No direct equivalent on Linux, files are closed automatically
+#endif
         return RTE_ERROR;
     }
 
@@ -128,13 +134,16 @@ int gdb_connect(unsigned short gdb_port)
 int gdb_connect_socket(unsigned short gdb_port)
 {
     int res;
+#ifdef _WIN32
     WSADATA wsaData;
+#endif
     struct sockaddr_in clientService;
     LARGE_INTEGER StartingTime;
 
     start_timer(&StartingTime);
     log_string("Connecting to the GDB server: ", NULL);
 
+#ifdef _WIN32
     // Initialize Winsock
     res = WSAStartup(MAKEWORD(2, 2), &wsaData);
 
@@ -143,6 +152,7 @@ int gdb_connect_socket(unsigned short gdb_port)
         log_data("Winsock startup error %d\n", (long long)res);
         return RTE_ERROR;
     }
+#endif
 
     // Create a SOCKET for connecting to server
     // SOCK_STREAM => calling recv will return as much data as is currently
@@ -152,7 +162,9 @@ int gdb_connect_socket(unsigned short gdb_port)
     if (gdb_socket == INVALID_SOCKET)
     {
         log_wsock_error("cannot create socket.\n");
+#ifdef _WIN32
         (void)WSACleanup();
+#endif
         return RTE_ERROR;
     }
 
@@ -165,7 +177,7 @@ int gdb_connect_socket(unsigned short gdb_port)
     //       and make other necessary changes to make it work.
 
     // Connect to server
-    res = connect(gdb_socket, (SOCKADDR*)&clientService, sizeof(clientService));
+    res = connect(gdb_socket, (struct sockaddr*)&clientService, sizeof(clientService));
 
     if (res == SOCKET_ERROR)
     {
@@ -175,12 +187,23 @@ int gdb_connect_socket(unsigned short gdb_port)
     }
 
     // Set receive timeout value for the gdb_socket.
+#ifdef _WIN32
     DWORD timeout = 1;            // Minimal value to enable some kind of polling
     (void)setsockopt(gdb_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
 
     // Set send timeout value for the gdb_socket.
     timeout = DEFAULT_SEND_TIMEOUT;
     (void)setsockopt(gdb_socket, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof(timeout));
+#else
+    struct timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 1000;       // 1ms
+    (void)setsockopt(gdb_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    timeout.tv_sec = DEFAULT_SEND_TIMEOUT / 1000;
+    timeout.tv_usec = (DEFAULT_SEND_TIMEOUT % 1000) * 1000;
+    (void)setsockopt(gdb_socket, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+#endif
 
     log_timing("OK (%.1f ms)", &StartingTime);
     return RTE_OK;
@@ -212,9 +235,15 @@ static int gdb_send(const char* msg, int length)
 
     if (res == SOCKET_ERROR)
     {
-        DWORD wsock_err = GetLastError();
+#ifdef _WIN32
+        DWORD wsock_err = WSAGetLastError();
 
         if (wsock_err == WSAETIMEDOUT)
+#else
+        int wsock_err = errno;
+
+        if (wsock_err == ETIMEDOUT)
+#endif
         {
             last_error = ERR_SEND_TIMEOUT;
             log_string(" - GDB Winsock send timeout. ", NULL);
@@ -579,8 +608,13 @@ static int gdb_get_message(size_t timeout)
 
         if (res < 0)        // Error reported?
         {
-            int sock_err = GetLastError();
+#ifdef _WIN32
+            int sock_err = WSAGetLastError();
             if (sock_err != WSAETIMEDOUT)
+#else
+            int sock_err = errno;
+            if (sock_err != ETIMEDOUT)
+#endif
             {
                 last_error = ERR_SOCKET;
                 return RTE_ERROR;
@@ -1126,8 +1160,13 @@ static void gdb_check_ack(void)
 
             case SOCKET_ERROR: // Socket error
             {
-                int sock_err = GetLastError();
+#ifdef _WIN32
+                int sock_err = WSAGetLastError();
                 if (sock_err != WSAETIMEDOUT)
+#else
+                int sock_err = errno;
+                if (sock_err != ETIMEDOUT)
+#endif
                 {
                     log_wsock_error("\nSocket error while waiting for ACK");
                     return;
@@ -1176,7 +1215,9 @@ void gdb_socket_cleanup(void)
 {
     log_string("\n", NULL);
     (void)closesocket(gdb_socket);  // Close the socket
+#ifdef _WIN32
     (void)WSACleanup();             // Cleanup the Winsock library
+#endif
 }
 
 

@@ -13,8 +13,16 @@
 
 #pragma once
 #include <stdio.h>
-#include <WinSock2.h>
-#include <Windows.h>
+
+#ifdef _WIN32
+    #include <WinSock2.h>
+    #include <Windows.h>
+#else
+    #include <sys/time.h>
+    #include <time.h>
+    #include <stdint.h>
+    typedef struct { int64_t QuadPart; } LARGE_INTEGER;
+#endif
 
 void enable_logging(bool on_off);
 void create_log_file(const char* file_name);

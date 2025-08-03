@@ -37,7 +37,7 @@ typedef enum
                             // Returns ACK if index is within g_rtedbg header, NACK otherwise
     RTECOM_READ_RTEDBG,     // Read data from g_rtedbg data structure
                             // Address is relative to the start of the g_rtgdb data structure.
-                            // Returns: NN bytes (NN = data parameter – number of bytes requested)
+                            // Returns: NN bytes (NN = data parameter ï¿½ number of bytes requested)
                             //          or NACK if requested data not inside of g_rtedbg
                             // Optional commands
     RTECOM_READ,            // Get data from the specified address ('data' = number of bytes)
@@ -64,6 +64,6 @@ typedef enum
 // Maximum length of data block received from embedded system
 #define MAX_COM_RECEIVE_MSG_SIZE  65520
 
-#endif _RTE_COM_H
+#endif  // _RTE_COM_H
 
 /*==== End of file ====*/

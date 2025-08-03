@@ -20,14 +20,22 @@
 
 
 #include "pch.h"
-#pragma comment(lib, "Ws2_32.lib")   // Link additional libraries
-#include <malloc.h>
+#ifdef _WIN32
+    #pragma comment(lib, "Ws2_32.lib")   // Link additional libraries
+    #include <malloc.h>
+#else
+    #include <stdlib.h>
+#endif
 #include <stdint.h>
-#include <conio.h>
+#include <cstddef>
+#include <cstring>
+#include <cerrno>
+#include <cctype>
 #include "bridge.h"
 #include "cmd_line.h"
 #include "rtedbg.h"
 #include "logger.h"
+#include "platform_compat.h"
 
 
 
@@ -79,7 +87,7 @@ static void load_and_display_rtedbg_structure_header(void);
  *         1 - error occurred
  */
 
-int __cdecl main(int argc, char * argv[])
+int main(int argc, char * argv[])
 {
     int rez;
     clock_t main_start_time = clock_ms();
@@ -95,7 +103,15 @@ int __cdecl main(int argc, char * argv[])
     if (rez != RTE_OK)
     {
         port_close();
-        (void)_fcloseall();
+#ifdef _WIN32
+    #ifdef _WIN32
+    (void)_fcloseall();
+#else
+    // No direct equivalent on Linux, files are closed automatically
+#endif
+#else
+        // No direct equivalent on Linux, files are closed automatically
+#endif
         return 1;
     }
     
@@ -116,7 +132,11 @@ int __cdecl main(int argc, char * argv[])
     }
 
     port_close();
+#ifdef _WIN32
     (void)_fcloseall();
+#else
+    // No direct equivalent on Linux, files are closed automatically
+#endif
     return rez;
     }
 
@@ -303,15 +323,31 @@ static void print_filter_info(void)
 
     if (parameters.filter_names)
     {
+#ifdef _WIN32
         errno_t err = fopen_s(&filters, parameters.filter_names, "r");
 
         if (err != 0)
         {
             char error_text[256];
+#ifdef _WIN32
             (void)_strerror_s(error_text, sizeof(error_text), NULL);
+#else
+            strerror_s(error_text, sizeof(error_text), errno);
+#endif
             printf("\nCannot open \"%s\" file. Error: %s", parameters.filter_names, error_text);
             port_close_files_and_exit();
         }
+#else
+        filters = fopen(parameters.filter_names, "r");
+
+        if (filters == NULL)
+        {
+            char error_text[256];
+            strerror_r(errno, error_text, sizeof(error_text));
+            printf("\nCannot open \"%s\" file. Error: %s", parameters.filter_names, error_text);
+            port_close_files_and_exit();
+        }
+#endif
     }
 
     uint32_t filter = rtedbg_header.filter;
@@ -642,7 +678,7 @@ static void benchmark_data_transfer(void)
 
         measurements++;
 
-        if (_kbhit())
+        if (kbhit())
         {
             printf("\nBenchmark terminated with a keystroke.\n");
             break;
@@ -675,7 +711,11 @@ static void benchmark_data_transfer(void)
         if (rez != 0)
         {
             char error_text[256];
+#ifdef _WIN32
             (void)_strerror_s(error_text, sizeof(error_text), NULL);
+#else
+            strerror_s(error_text, sizeof(error_text), errno);
+#endif
             printf("\nCannot create file 'speed_test.csv' - error: %s.\n", error_text);
         }
         else
@@ -724,7 +764,7 @@ static void display_logging_state(clock_t* start_time)
 
     if ((current_time - *start_time) < 350)
     {
-        Sleep(50);
+        sleep_ms(50);
         return;
     }
 
@@ -814,17 +854,17 @@ static int persistent_connection(void)
 
     for (;;)
     {
-        if (!_kbhit())
+        if (!kbhit())
         {
             display_logging_state(&start_time);
             continue;
         }
 
-        int key = _getch();
+        int key = getch();
 
         if ((key == 0xE0) || (key == 0))    // Function key?
         {
-            (void)_getch();
+            (void)getch();
             key = '\xFF';                   // Unknown command
         }
 
@@ -895,7 +935,7 @@ static int persistent_connection(void)
         case '\x1B':
             printf("\n\nPress the 'Y' button to exit the program.");
 
-            if (toupper(_getch()) == 'Y')
+            if (toupper(getch()) == 'Y')
             {
                 return RTE_OK;
             }
@@ -921,7 +961,11 @@ static void execute_commands_from_file_x(char name_start)
 {
     char cmd_file_name[16];
     cmd_file_name[0] = name_start;
+#ifdef _WIN32
     strcpy_s(&cmd_file_name[1], sizeof(cmd_file_name) - 1, ".cmd");
+#else
+    strcpy(&cmd_file_name[1], ".cmd");
+#endif
     (void)execute_commands_from_file(cmd_file_name);
 }
 
@@ -1055,7 +1099,7 @@ static int save_rtedbg_structure(void)
         for (size_t i = 0; i < 9; i++)
         {
             putchar('.');
-            Sleep(100);
+            sleep_ms(100);
             rez = fopen_s(&bin_file, parameters.bin_file_name, "wb");
 
             if (rez == 0)
@@ -1091,7 +1135,11 @@ static int save_rtedbg_structure(void)
     {
         log_string("\nCould not write to the file: %s.", parameters.bin_file_name);
         char error_text[256];
+#ifdef _WIN32
         (void)_strerror_s(error_text, sizeof(error_text), NULL);
+#else
+        strerror_s(error_text, sizeof(error_text), errno);
+#endif
         log_string(" Error: %s", error_text);
         (void)fclose(bin_file);
 
@@ -1362,7 +1410,7 @@ static void delay_before_data_transfer(void)
     if (parameters.delay > 0)
     {
         log_data("\nDelay %llu ms", (long long)parameters.delay);
-        Sleep(parameters.delay);
+        sleep_ms(parameters.delay);
             // Wait for low priority tasks to finish writing to the circular buffer
     }
 }
@@ -1463,7 +1511,7 @@ static void internal_command(const char* cmd_text)
             {
                 printf("\ndelay %u ms", delay_ms);
             }
-            Sleep(delay_ms);
+            sleep_ms(delay_ms);
             port_flush();
         }
     }

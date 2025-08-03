@@ -10,10 +10,23 @@
  * @author    B. Premzel
  */
 
-#define _WINSOCK_DEPRECATED_NO_WARNINGS 1
-#include <winsock2.h>
-#include <Ws2tcpip.h>
-#include <Windows.h>
+#ifdef _WIN32
+    #define _WINSOCK_DEPRECATED_NO_WARNINGS 1
+    #include <winsock2.h>
+    #include <Ws2tcpip.h>
+    #include <Windows.h>
+#else
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <arpa/inet.h>
+    #include <unistd.h>
+    #include <netdb.h>
+    #include <errno.h>
+    #define SOCKET int
+    #define INVALID_SOCKET -1
+    #define SOCKET_ERROR -1
+    #define closesocket close
+#endif
 #include <time.h>
 #include "gdb_defs.h"
 

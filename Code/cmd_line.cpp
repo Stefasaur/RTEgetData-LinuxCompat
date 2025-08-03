@@ -13,8 +13,9 @@
 #include "pch.h"
 #include <stdlib.h>
 #include <string.h>
-#include <conio.h>
+#include <cctype>
 #include "cmd_line.h"
+#include "platform_compat.h"
 #include "RTEgetData.h"
 #include "gdb_defs.h"
 #include "logger.h"
@@ -414,7 +415,13 @@ static void process_one_cmd_line_parameter(char * parameter)
 
 static void process_port_type(char *p_parameter)
 {
+#ifdef _WIN32
     if (_strnicmp("COM", p_parameter, 3) == 0)
+#else
+    if (strncasecmp("COM", p_parameter, 3) == 0 || 
+        strncmp(p_parameter, "/dev/", 5) == 0 ||
+        strncasecmp("tty", p_parameter, 3) == 0)
+#endif
     {
         // Set default parameters for the COM port
         parameters.com_port.baudrate = DEFAULT_COM_BAUDRATE;
@@ -425,13 +432,31 @@ static void process_port_type(char *p_parameter)
         parameters.max_message_size = MAX_COM_RECEIVE_MSG_SIZE;
 
         int correct_parameter = false;
+        
+#ifdef _WIN32
         p_parameter += 3;               // Skip "COM"
-
         while(isdigit(*p_parameter))    // Skip the port number
         {
             p_parameter++;
             correct_parameter = true;
         }
+#else
+        // On Linux, handle different device name formats
+        if (strncasecmp("COM", parameters.com_port.name, 3) == 0) {
+            p_parameter += 3;               // Skip "COM"
+            while(isdigit(*p_parameter))    // Skip the port number
+            {
+                p_parameter++;
+                correct_parameter = true;
+            }
+        } else {
+            // For /dev/ttyXXX or ttyXXX formats, find the end of device name
+            while(*p_parameter && *p_parameter != '=' && !isspace(*p_parameter)) {
+                p_parameter++;
+                correct_parameter = true;
+            }
+        }
+#endif
 
         if (*p_parameter != '\0')
         {

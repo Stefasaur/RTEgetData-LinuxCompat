@@ -19,6 +19,9 @@
 #include "rte_com.h"
 #include "RTEgetData.h"
 
+#ifdef _WIN32
+#include <cstring>
+#include <cctype>
 
 //********** Global variables ***********
 HANDLE h_com_port;              // COM port handle
@@ -927,5 +930,297 @@ const char* get_error_message_text(DWORD error_code)
 
     return error_buffer;
 }
+
+#else  // Linux implementation
+
+#include <fcntl.h>
+#include <termios.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <errno.h>
+#include <cstring>
+#include "platform_compat.h"
+
+//********** Global variables ***********
+static int serial_fd = -1;              // Serial port file descriptor
+static char linux_error_buffer[256];    // Error message buffer
+
+//*********** Local functions ***********
+static speed_t get_baud_rate(int baud);
+static int set_serial_attributes(int fd);
+static void log_linux_error(const char* operation);
+
+/***
+ * @brief Convert integer baud rate to speed_t constant
+ */
+static speed_t get_baud_rate(int baud)
+{
+    switch (baud) {
+        case 9600:    return B9600;
+        case 19200:   return B19200;
+        case 38400:   return B38400;
+        case 57600:   return B57600;
+        case 115200:  return B115200;
+        case 230400:  return B230400;
+        case 460800:  return B460800;
+        case 500000:  return B500000;
+        case 576000:  return B576000;
+        case 921600:  return B921600;
+        case 1000000: return B1000000;
+        case 1152000: return B1152000;
+        case 1500000: return B1500000;
+        case 2000000: return B2000000;
+        case 2500000: return B2500000;
+        case 3000000: return B3000000;
+        case 3500000: return B3500000;
+        case 4000000: return B4000000;
+        default:      return B9600;  // Default fallback
+    }
+}
+
+/***
+ * @brief Configure serial port attributes
+ */
+static int set_serial_attributes(int fd)
+{
+    struct termios tty;
+    
+    if (tcgetattr(fd, &tty) != 0) {
+        log_linux_error("tcgetattr");
+        return RTE_ERROR;
+    }
+
+    // Set baud rate
+    speed_t speed = get_baud_rate(parameters.com_port.baudrate);
+    cfsetospeed(&tty, speed);
+    cfsetispeed(&tty, speed);
+
+    // Configure for raw mode
+    tty.c_cflag &= ~PARENB;  // No parity
+    tty.c_cflag &= ~CSTOPB;  // One stop bit
+    tty.c_cflag &= ~CSIZE;   // Clear data size bits
+    tty.c_cflag |= CS8;      // 8 data bits
+    tty.c_cflag &= ~CRTSCTS; // No hardware flow control
+    tty.c_cflag |= CREAD | CLOCAL; // Enable receiver, ignore modem control lines
+
+    // Configure parity based on parameters
+    switch (parameters.com_port.parity) {
+        case ODDPARITY:
+            tty.c_cflag |= PARENB | PARODD;
+            break;
+        case EVENPARITY:
+            tty.c_cflag |= PARENB;
+            tty.c_cflag &= ~PARODD;
+            break;
+        case NOPARITY:
+        default:
+            tty.c_cflag &= ~PARENB;
+            break;
+    }
+
+    // Configure stop bits
+    if (parameters.com_port.stop_bits == TWOSTOPBITS) {
+        tty.c_cflag |= CSTOPB;
+    } else {
+        tty.c_cflag &= ~CSTOPB;
+    }
+
+    // Input flags - turn off input processing
+    tty.c_iflag &= ~(IXON | IXOFF | IXANY); // Turn off s/w flow ctrl
+    tty.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL); // Disable any special handling of received bytes
+
+    // Output flags - turn off output processing
+    tty.c_oflag &= ~OPOST; // Prevent special interpretation of output bytes (e.g. newline chars)
+    tty.c_oflag &= ~ONLCR; // Prevent conversion of newline to carriage return/line feed
+
+    // Control characters
+    tty.c_cc[VTIME] = parameters.com_port.recv_start_timeout / 100; // Wait timeout in deciseconds
+    tty.c_cc[VMIN] = 0;    // Return immediately with any received data
+
+    // Local flags
+    tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG); // Raw mode
+
+    if (tcsetattr(fd, TCSANOW, &tty) != 0) {
+        log_linux_error("tcsetattr");
+        return RTE_ERROR;
+    }
+
+    return RTE_OK;
+}
+
+/***
+ * @brief Log Linux system error with context
+ */
+static void log_linux_error(const char* operation)
+{
+    snprintf(linux_error_buffer, sizeof(linux_error_buffer), 
+             "%s failed: %s", operation, strerror(errno));
+    log_string(linux_error_buffer, NULL);
+}
+
+/***
+ * @brief Open and configure serial port
+ */
+int com_open(void)
+{
+    char device_path[64];
+    
+    // Convert COM port name to Linux device path
+    // COM1 -> /dev/ttyS0, COM2 -> /dev/ttyS1, etc.
+    // Also support direct device paths like /dev/ttyUSB0
+    if (strncmp(parameters.com_port.name, "COM", 3) == 0) {
+        int port_num = atoi(&parameters.com_port.name[3]);
+        if (port_num > 0) {
+            snprintf(device_path, sizeof(device_path), "/dev/ttyS%d", port_num - 1);
+        } else {
+            log_string("Invalid COM port number", NULL);
+            return RTE_ERROR;
+        }
+    } else if (parameters.com_port.name[0] == '/') {
+        // Direct device path (e.g., /dev/ttyUSB0, /dev/ttyACM0)
+        strncpy(device_path, parameters.com_port.name, sizeof(device_path) - 1);
+        device_path[sizeof(device_path) - 1] = '\0';
+    } else {
+        // Assume it's a device name without /dev/ prefix
+        snprintf(device_path, sizeof(device_path), "/dev/%s", parameters.com_port.name);
+    }
+
+    log_string("Opening serial port: ", device_path);
+
+    // Open serial port
+    serial_fd = open(device_path, O_RDWR | O_NOCTTY | O_NONBLOCK);
+    if (serial_fd < 0) {
+        log_linux_error("open");
+        return RTE_ERROR;
+    }
+
+    // Configure serial port
+    if (set_serial_attributes(serial_fd) != RTE_OK) {
+        close(serial_fd);
+        serial_fd = -1;
+        return RTE_ERROR;
+    }
+
+    // Flush any existing data
+    tcflush(serial_fd, TCIOFLUSH);
+
+    log_string(" - OK", NULL);
+    return RTE_OK;
+}
+
+/***
+ * @brief Close serial port
+ */
+void com_close(void)
+{
+    if (serial_fd >= 0) {
+        close(serial_fd);
+        serial_fd = -1;
+        log_string("Serial port closed", NULL);
+    }
+}
+
+/***
+ * @brief Read data from embedded system via serial port
+ */
+int com_read_memory(unsigned char* buffer, unsigned int address, unsigned int length)
+{
+    if (serial_fd < 0) {
+        log_string("Serial port not open", NULL);
+        return RTE_ERROR;
+    }
+
+    // Send read command to embedded system
+    char cmd[32];
+    snprintf(cmd, sizeof(cmd), "R%08X%04X\n", address, length);
+    
+    if (write(serial_fd, cmd, strlen(cmd)) < 0) {
+        log_linux_error("write");
+        return RTE_ERROR;
+    }
+
+    // Read response
+    ssize_t bytes_read = read(serial_fd, buffer, length);
+    if (bytes_read < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            log_string("Read timeout", NULL);
+            return RTE_ERROR;  // Use RTE_ERROR instead of RTE_TIMEOUT
+        }
+        log_linux_error("read");
+        return RTE_ERROR;
+    }
+
+    if (bytes_read != (ssize_t)length) {
+        log_data("Expected %lld bytes, got different amount", (long long)length);
+        return RTE_ERROR;
+    }
+
+    return RTE_OK;
+}
+
+/***
+ * @brief Write data to embedded system via serial port
+ */
+int com_write_memory(const unsigned char* buffer, unsigned address, unsigned length)
+{
+    if (serial_fd < 0) {
+        log_string("Serial port not open", NULL);
+        return RTE_ERROR;
+    }
+
+    // Send write command followed by data
+    char cmd[32];
+    snprintf(cmd, sizeof(cmd), "W%08X%04X", address, length);
+    
+    if (write(serial_fd, cmd, strlen(cmd)) < 0) {
+        log_linux_error("write command");
+        return RTE_ERROR;
+    }
+    
+    if (write(serial_fd, buffer, length) < 0) {
+        log_linux_error("write data");
+        return RTE_ERROR;
+    }
+
+    return RTE_OK;
+}
+
+/***
+ * @brief Flush serial port buffers
+ */
+void com_flush(void)
+{
+    if (serial_fd >= 0) {
+        tcflush(serial_fd, TCIOFLUSH);
+    }
+}
+
+/***
+ * @brief Display COM port error message
+ */
+void com_display_errors(const char* message)
+{
+    if (message) {
+        printf("%s", message);
+    }
+    
+    if (serial_fd < 0) {
+        printf(" (Serial port not open)");
+    }
+}
+
+/***
+ * @brief Get COM port error text
+ */
+const char* com_get_error_text(void)
+{
+    if (serial_fd < 0) {
+        return "Serial port not open";
+    }
+    
+    return linux_error_buffer[0] ? linux_error_buffer : "No error";
+}
+
+#endif  // _WIN32
 
 /*==== End of file ====*/

@@ -17,18 +17,25 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include "pch.h"
 #include <stdint.h>
+#include <cstring>
+#include <cerrno>
+#include <cstdlib>
 #include "com_lib.h"
 #include "gdb_lib.h"
 #include "RTEgetData.h"
 #include "logger.h"
 #include "cmd_line.h"
 #include "bridge.h"
-#include <tlhelp32.h>
+#ifdef _WIN32
+    #include <tlhelp32.h>
+#endif
 
 
 //*********** Local functions ***********
+#ifdef _WIN32
 static DWORD GetProcessIdByName(const char* processName);
 static void set_process_priority(const char* process_name, DWORD dwPriorityClass, bool report_error);
+#endif
 static void decrease_priorities(void);
 static void increase_priorities(void);
 
@@ -346,10 +353,17 @@ void port_reconnect(void)
                 {
                     printf("\nCould not open COM port: %s", parameters.com_port.name);
 
+#ifdef _WIN32
                     if (GetLastError())
                     {
                         printf(" (%s)", strerror(GetLastError()));
                     }
+#else
+                    if (errno)
+                    {
+                        printf(" (%s)", strerror(errno));
+                    }
+#endif
 
                     printf("\n");
                 }
@@ -370,7 +384,12 @@ void port_reconnect(void)
  * @brief Close all open files, clean up connection, and exit with return code 1.
  */
 
-__declspec(noreturn) void port_close_files_and_exit(void)
+#ifdef _WIN32
+    __declspec(noreturn)
+#else
+    __attribute__((noreturn))
+#endif
+void port_close_files_and_exit(void)
 {
     decrease_priorities();              // Restore the normal priority
 
@@ -395,7 +414,11 @@ __declspec(noreturn) void port_close_files_and_exit(void)
             "\nThe log file contains further details.\n\n");
     }
 
+#ifdef _WIN32
     (void)_fcloseall();
+#else
+    // No direct equivalent on Linux, files are closed automatically
+#endif
     exit(1);
 }
 
@@ -459,6 +482,7 @@ const char* port_get_error_text(void)
  * @return The process ID (PID) of the found process, or 0 if the process is not found or an error occurs.
  */
 
+#ifdef _WIN32
 static DWORD GetProcessIdByName(const char* processName)
 {
     if ((processName == NULL) || (processName[0] == '\0')) {
@@ -500,6 +524,7 @@ static DWORD GetProcessIdByName(const char* processName)
     (void)CloseHandle(snapshot);
     return 0;
 }
+#endif
 
 
 /**
@@ -518,6 +543,7 @@ static DWORD GetProcessIdByName(const char* processName)
  * @note If the process is not found or an error occurs, the function will log an error message if report_error is true.
  */
 
+#ifdef _WIN32
 static void set_process_priority(const char* processName, DWORD dwPriorityClass, bool report_error)
 {
     DWORD processId = GetProcessIdByName(processName);
@@ -556,6 +582,7 @@ static void set_process_priority(const char* processName, DWORD dwPriorityClass,
 
     (void)CloseHandle(hProcess);
 }
+#endif
 
 
 /**
@@ -582,6 +609,7 @@ static void increase_priorities(void)
 {
     if (parameters.elevated_priority)
     {
+#ifdef _WIN32
         // Increase RTEgetData process priority
         bool success = SetPriorityClass(GetCurrentProcess(), REALTIME_PRIORITY_CLASS);
 
@@ -596,6 +624,10 @@ static void increase_priorities(void)
         {
             set_process_priority(parameters.driver_names[i], REALTIME_PRIORITY_CLASS, true);
         }
+#else
+        // Priority setting not implemented on Linux
+        log_string("Priority elevation not implemented on Linux", NULL);
+#endif
     }
 }
 
@@ -622,6 +654,7 @@ static void decrease_priorities(void)
 {
     if (parameters.elevated_priority)
     {
+#ifdef _WIN32
         // Restore RTEgetData process priority to normal.
         (void)SetPriorityClass(GetCurrentProcess(), NORMAL_PRIORITY_CLASS);
 
@@ -630,6 +663,9 @@ static void decrease_priorities(void)
         {
             set_process_priority(parameters.driver_names[i], NORMAL_PRIORITY_CLASS, false);
         }
+#else
+        // Priority setting not implemented on Linux
+#endif
     }
 }
 

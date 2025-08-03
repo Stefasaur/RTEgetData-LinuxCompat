@@ -21,7 +21,11 @@ int port_write_memory(const unsigned char* buffer, unsigned address, unsigned le
 void port_flush(void);
 void port_handle_unexpected_messages(void);
 void port_reconnect(void);
-__declspec(noreturn) void port_close_files_and_exit(void);
+#ifdef _WIN32
+    __declspec(noreturn) void port_close_files_and_exit(void);
+#else
+    __attribute__((noreturn)) void port_close_files_and_exit(void);
+#endif
 void port_display_errors(const char* message);
 int port_execute_command(const char* command);
 const char* port_get_error_text(void);
