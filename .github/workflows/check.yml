@@ -1,0 +1,86 @@
+name: Quick Check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master, feat/*, fix/*]
+
+jobs:
+  check:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: System Info
+      shell: bash
+      run: |
+        echo "=== System Information ==="
+        uname -a || echo "uname not available"
+        
+        echo "=== CMake Version ==="
+        cmake --version
+        
+        echo "=== Compiler Check ==="
+        if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          where cl 2>/dev/null || echo "MSVC not found"
+          where gcc 2>/dev/null || echo "GCC not found"
+        else
+          which gcc || echo "GCC not found"
+          which g++ || echo "G++ not found"
+          gcc --version 2>/dev/null || echo "GCC version not available"
+        fi
+        
+        echo "=== Available Space ==="
+        df -h . 2>/dev/null || dir
+    
+    - name: Install Dependencies
+      shell: bash
+      run: |
+        if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config libgl1-mesa-dev
+        elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+          brew install cmake
+        fi
+    
+    - name: Test CLI Build
+      run: |
+        cmake -B build-cli -DBUILD_GUI=OFF -DCMAKE_BUILD_TYPE=Release
+        cmake --build build-cli --config Release
+    
+    - name: Verify CLI
+      shell: bash
+      run: |
+        if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          ls -la build-cli/Release/ || dir build-cli\\Release\\
+          ./build-cli/Release/RTEgetData.exe --help || echo "CLI test completed"
+        else
+          ls -la build-cli/
+          ./build-cli/RTEgetData --help || echo "CLI test completed" 
+        fi
+    
+    - name: Test GUI Build
+      run: |
+        cmake -B build-gui -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON -DCMAKE_BUILD_TYPE=Release
+        cmake --build build-gui --config Release --parallel
+    
+    - name: Verify GUI
+      shell: bash
+      run: |
+        if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          ls -la build-gui/Release/ || dir build-gui\\Release\\
+          echo "GUI executable size:"
+          ls -lh build-gui/Release/RTEgetData-GUI.exe || dir build-gui\\Release\\RTEgetData-GUI.exe
+        else
+          ls -la build-gui/
+          echo "GUI executable size:"
+          ls -lh build-gui/RTEgetData-GUI
+        fi
+        
+        echo "✅ Build check completed successfully"

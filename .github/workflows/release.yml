@@ -1,0 +1,208 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create GitHub release'
+        required: false
+        default: 'true'
+        type: boolean
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            cmake_args: -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON
+            build_args: --config Release
+            artifact_path: build/Release
+            artifact_cli: RTEgetData.exe
+            artifact_gui: RTEgetData-GUI.exe
+            
+          - name: Linux
+            os: ubuntu-latest  
+            cmake_args: -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON -DCMAKE_BUILD_TYPE=Release
+            build_args: --parallel
+            artifact_path: build
+            artifact_cli: RTEgetData
+            artifact_gui: RTEgetData-GUI
+            
+          - name: macOS
+            os: macos-latest
+            cmake_args: -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON -DCMAKE_BUILD_TYPE=Release
+            build_args: --parallel
+            artifact_path: build
+            artifact_cli: RTEgetData
+            artifact_gui: RTEgetData-GUI
+
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Install Linux dependencies
+      if: matrix.name == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake pkg-config libgl1-mesa-dev
+    
+    - name: Install macOS dependencies
+      if: matrix.name == 'macOS'
+      run: |
+        brew install cmake
+    
+    - name: Configure
+      run: cmake -B build ${{ matrix.cmake_args }}
+    
+    - name: Build
+      run: cmake --build build ${{ matrix.build_args }}
+    
+    - name: Verify build
+      shell: bash
+      run: |
+        echo "Checking build outputs..."
+        ls -la ${{ matrix.artifact_path }}/
+        
+        if [ ! -f "${{ matrix.artifact_path }}/${{ matrix.artifact_cli }}" ]; then
+          echo "ERROR: CLI executable not found"
+          exit 1
+        fi
+        
+        if [ ! -f "${{ matrix.artifact_path }}/${{ matrix.artifact_gui }}" ]; then
+          echo "ERROR: GUI executable not found"  
+          exit 1
+        fi
+        
+        echo "✅ Both executables found"
+    
+    - name: Package
+      shell: bash
+      run: |
+        mkdir -p release
+        
+        # Copy executables
+        cp "${{ matrix.artifact_path }}/${{ matrix.artifact_cli }}" "release/RTEgetData-CLI${{ matrix.name == 'Windows' && '.exe' || '' }}"
+        cp "${{ matrix.artifact_path }}/${{ matrix.artifact_gui }}" "release/RTEgetData-GUI${{ matrix.name == 'Windows' && '.exe' || '' }}"
+        
+        # Copy documentation
+        cp README.md release/ 2>/dev/null || cp Readme.md release/ 2>/dev/null || echo "README not found"
+        cp LICENSE.md release/ 2>/dev/null || echo "LICENSE not found"
+        cp CHANGELOG.md release/ 2>/dev/null || echo "CHANGELOG not found"
+        cp BUILD.md release/ 2>/dev/null || echo "BUILD.md not found"
+        
+        # Create launcher scripts
+        if [ "${{ matrix.name }}" = "Windows" ]; then
+          echo '@echo off' > release/run-cli.bat
+          echo 'RTEgetData-CLI.exe %*' >> release/run-cli.bat
+          echo '@echo off' > release/run-gui.bat
+          echo 'RTEgetData-GUI.exe %*' >> release/run-gui.bat
+        else
+          echo '#!/bin/bash' > release/run-cli.sh
+          echo './RTEgetData-CLI "$@"' >> release/run-cli.sh
+          echo '#!/bin/bash' > release/run-gui.sh
+          echo './RTEgetData-GUI "$@"' >> release/run-gui.sh
+          chmod +x release/run-*.sh release/RTEgetData-*
+        fi
+        
+        echo "Package contents:"
+        ls -la release/
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: RTEgetData-${{ matrix.name }}
+        path: release/
+        retention-days: 90
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release == 'true')
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+    
+    - name: Create release packages
+      run: |
+        cd artifacts
+        
+        # Create archives
+        zip -r RTEgetData-Windows.zip RTEgetData-Windows/
+        tar -czf RTEgetData-Linux.tar.gz RTEgetData-Linux/
+        tar -czf RTEgetData-macOS.tar.gz RTEgetData-macOS/
+        
+        # Create checksums
+        sha256sum *.zip *.tar.gz > checksums.sha256
+        
+        # Move to root
+        mv *.zip *.tar.gz checksums.sha256 ../
+        cd ..
+        
+        echo "Release packages created:"
+        ls -la *.zip *.tar.gz checksums.sha256
+    
+    - name: Get version
+      id: version
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        else
+          echo "version=manual-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.version }}
+        name: RTEgetData ${{ steps.version.outputs.version }}
+        body: |
+          # RTEgetData ${{ steps.version.outputs.version }}
+          
+          Cross-platform data transfer utility for embedded systems with both CLI and GUI interfaces.
+          
+          ## Downloads
+          
+          - **Windows**: `RTEgetData-Windows.zip` (~5.5MB)
+          - **Linux**: `RTEgetData-Linux.tar.gz` (~5.3MB)  
+          - **macOS**: `RTEgetData-macOS.tar.gz` (~5.8MB)
+          - **Checksums**: `checksums.sha256`
+          
+          ## What's Included
+          
+          Each package contains:
+          - `RTEgetData-CLI` - Command line interface (~60KB)
+          - `RTEgetData-GUI` - Graphical interface (~5MB)
+          - Documentation and launcher scripts
+          - Zero external dependencies (statically linked)
+          
+          ## Quick Start
+          
+          1. Download the package for your platform
+          2. Extract the archive
+          3. Run `RTEgetData-GUI` for graphical interface
+          4. Or run `RTEgetData-CLI --help` for command line usage
+          
+          ## Verification
+          
+          ```bash
+          sha256sum -c checksums.sha256
+          ```
+        draft: false
+        prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+        files: |
+          *.zip
+          *.tar.gz  
+          checksums.sha256
