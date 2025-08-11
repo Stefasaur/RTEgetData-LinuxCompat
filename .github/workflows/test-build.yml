@@ -25,7 +25,19 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential cmake pkg-config libgl1-mesa-dev
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          pkg-config \
+          libgl1-mesa-dev \
+          libx11-dev \
+          libxext-dev \
+          libxrandr-dev \
+          libxinerama-dev \
+          libxcursor-dev \
+          libxi-dev \
+          libasound2-dev \
+          libpulse-dev
     
     - name: Install macOS dependencies
       if: runner.os == 'macOS'
@@ -33,19 +45,35 @@ jobs:
         brew install cmake pkg-config
     
     - name: Configure CMake
+      timeout-minutes: 10
       run: |
-        cmake -B build -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          # Use GLFW for Windows to avoid SDL2 hanging issues
+          cmake -B build -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} -DBUILD_GUI=ON -DGUI_USE_SDL2=OFF -DGUI_STATIC_LINK=ON
+        else
+          # Use SDL2 for Linux/macOS
+          cmake -B build -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON
+        fi
+      shell: bash
     
     - name: Build
-      run: cmake --build build --parallel
+      timeout-minutes: 15
+      run: |
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          cmake --build build --config Debug --parallel
+        else
+          cmake --build build --parallel
+        fi
+      shell: bash
     
     - name: Test CLI (Linux/macOS)
       if: runner.os != 'Windows'
       run: |
-        ./build/RTEgetData --help || echo "CLI help test completed"
+        if [ -f "build/RTEgetData" ]; then echo "CLI executable built successfully"; else echo "CLI executable not found"; exit 1; fi
+        if [ -f "build/RTEgetData-GUI" ]; then echo "GUI executable built successfully"; else echo "GUI executable not found"; exit 1; fi
     
     - name: Test CLI (Windows)
       if: runner.os == 'Windows'
       run: |
-        .\build\Debug\RTEgetData.exe --help || .\build\RTEgetData.exe --help || echo "CLI help test completed"
-      shell: cmd
+        if (Test-Path "build/Debug/RTEgetData.exe") { echo "CLI executable built successfully" } else { echo "CLI executable not found"; exit 1 }
+        if (Test-Path "build/Debug/RTEgetData-GUI.exe") { echo "GUI executable built successfully" } else { echo "GUI executable not found"; exit 1 }

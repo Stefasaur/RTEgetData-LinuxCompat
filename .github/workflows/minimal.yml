@@ -82,6 +82,7 @@ jobs:
           libxi-dev
     
     - name: Build with GUI
+      timeout-minutes: 15
       run: |
         cmake -B build \
           -DCMAKE_BUILD_TYPE=Release \
@@ -108,12 +109,14 @@ jobs:
   windows-gui:
     runs-on: windows-latest
     needs: windows-cli  # Only run if CLI works
+    timeout-minutes: 15  # Add timeout to prevent hanging
     
     steps:
     - name: Checkout
       uses: actions/checkout@v4
     
-    - name: Build with GUI
+    - name: Build with GUI (SDL2 with timeout protection)
+      timeout-minutes: 15
       run: |
         cmake -B build -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON
         cmake --build build --config Release --parallel

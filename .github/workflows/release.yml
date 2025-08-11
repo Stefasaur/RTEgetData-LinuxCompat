@@ -52,6 +52,7 @@ jobs:
           pkg-config \
           libgl1-mesa-dev \
           libx11-dev \
+          libxext-dev \
           libxrandr-dev \
           libxinerama-dev \
           libxcursor-dev \
@@ -64,6 +65,7 @@ jobs:
     
     
     - name: Configure
+      timeout-minutes: 10
       run: |
         echo "=== CMake Configuration Debug Info ==="
         echo "OS: ${{ matrix.name }}"
@@ -78,6 +80,7 @@ jobs:
         cmake -B build ${{ matrix.cmake_args }} -DCMAKE_VERBOSE_MAKEFILE=ON
     
     - name: Build
+      timeout-minutes: 15
       run: cmake --build build ${{ matrix.build_args }}
     
     - name: Verify build
