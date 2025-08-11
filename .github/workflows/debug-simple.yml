@@ -1,0 +1,115 @@
+name: Debug Simple
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug-linux:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Environment check
+      run: |
+        echo "=== System Info ==="
+        uname -a
+        whoami
+        pwd
+        
+        echo "=== Available tools ==="
+        which cmake || echo "cmake not found"
+        which gcc || echo "gcc not found"
+        which g++ || echo "g++ not found"
+        
+        cmake --version || echo "cmake version failed"
+        gcc --version || echo "gcc version failed"
+    
+    - name: Install dependencies step by step
+      run: |
+        echo "=== Updating package list ==="
+        sudo apt-get update
+        
+        echo "=== Installing build-essential ==="
+        sudo apt-get install -y build-essential
+        
+        echo "=== Installing cmake ==="
+        sudo apt-get install -y cmake
+        
+        echo "=== Verifying installation ==="
+        which cmake
+        cmake --version
+        which gcc
+        gcc --version
+    
+    - name: Examine project structure
+      run: |
+        echo "=== Project files ==="
+        ls -la
+        
+        echo "=== CMakeLists.txt exists? ==="
+        [ -f "CMakeLists.txt" ] && echo "YES" || echo "NO"
+        
+        echo "=== Code directory ==="
+        [ -d "Code" ] && ls -la Code/ || echo "No Code directory"
+        
+        echo "=== First 20 lines of CMakeLists.txt ==="
+        head -20 CMakeLists.txt || echo "Cannot read CMakeLists.txt"
+    
+    - name: Try minimal CMake
+      run: |
+        echo "=== Attempting minimal cmake configure ==="
+        cmake -B build-test -DBUILD_GUI=OFF || echo "CMAKE FAILED"
+        
+        echo "=== Build directory contents ==="
+        [ -d "build-test" ] && ls -la build-test/ || echo "No build directory created"
+        
+        echo "=== CMakeFiles content ==="
+        [ -d "build-test/CMakeFiles" ] && ls -la build-test/CMakeFiles/ || echo "No CMakeFiles"
+    
+    - name: Check for errors
+      if: always()
+      run: |
+        echo "=== Looking for error files ==="
+        find . -name "CMakeError.log" -exec cat {} \; 2>/dev/null || echo "No CMakeError.log found"
+        find . -name "CMakeOutput.log" -exec head -50 {} \; 2>/dev/null || echo "No CMakeOutput.log found"
+
+  debug-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Environment check
+      run: |
+        echo "=== System Info ==="
+        echo %COMPUTERNAME%
+        echo %USERNAME%
+        echo %CD%
+        
+        echo "=== Available tools ==="
+        where cmake 2>nul || echo cmake not found
+        where cl 2>nul || echo cl not found
+        
+        cmake --version || echo cmake version failed
+    
+    - name: Examine project structure
+      run: |
+        echo "=== Project files ==="
+        dir
+        
+        echo "=== CMakeLists.txt exists? ==="
+        if exist "CMakeLists.txt" (echo YES) else (echo NO)
+        
+        echo "=== Code directory ==="
+        if exist "Code" (dir Code) else (echo No Code directory)
+    
+    - name: Try minimal CMake
+      run: |
+        echo "=== Attempting minimal cmake configure ==="
+        cmake -B build-test -DBUILD_GUI=OFF || echo CMAKE FAILED
+        
+        echo "=== Build directory contents ==="
+        if exist "build-test" (dir build-test) else (echo No build directory created)

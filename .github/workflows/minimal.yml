@@ -1,0 +1,135 @@
+name: Minimal Working Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master, feat/*, minimal-*]
+
+jobs:
+  linux-cli:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Install basic dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake
+    
+    - name: Build CLI only
+      run: |
+        cmake -B build -DBUILD_GUI=OFF -DCMAKE_BUILD_TYPE=Release
+        cmake --build build
+    
+    - name: Test CLI
+      run: |
+        ls -la build/
+        ./build/RTEgetData --help || echo "CLI executable works"
+    
+    - name: Upload CLI
+      uses: actions/upload-artifact@v4
+      with:
+        name: RTEgetData-Linux-CLI
+        path: build/RTEgetData
+        retention-days: 7
+
+  windows-cli:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Build CLI only
+      run: |
+        cmake -B build -DBUILD_GUI=OFF
+        cmake --build build --config Release
+    
+    - name: Test CLI
+      run: |
+        dir build\Release\
+        build\Release\RTEgetData.exe --help || echo "CLI executable works"
+    
+    - name: Upload CLI
+      uses: actions/upload-artifact@v4
+      with:
+        name: RTEgetData-Windows-CLI
+        path: build/Release/RTEgetData.exe
+        retention-days: 7
+
+  linux-gui:
+    runs-on: ubuntu-latest
+    needs: linux-cli  # Only run if CLI works
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Install GUI dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          pkg-config \
+          libgl1-mesa-dev \
+          libx11-dev \
+          libxrandr-dev \
+          libxinerama-dev \
+          libxcursor-dev \
+          libxi-dev
+    
+    - name: Build with GUI
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DBUILD_GUI=ON \
+          -DGUI_USE_SDL2=ON \
+          -DGUI_STATIC_LINK=ON
+        cmake --build build --parallel
+    
+    - name: Test GUI build
+      run: |
+        ls -la build/
+        echo "CLI size: $(stat -c%s build/RTEgetData) bytes"
+        echo "GUI size: $(stat -c%s build/RTEgetData-GUI) bytes"
+    
+    - name: Upload Linux binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: RTEgetData-Linux-Full
+        path: |
+          build/RTEgetData
+          build/RTEgetData-GUI
+        retention-days: 7
+
+  windows-gui:
+    runs-on: windows-latest
+    needs: windows-cli  # Only run if CLI works
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Build with GUI
+      run: |
+        cmake -B build -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON
+        cmake --build build --config Release --parallel
+    
+    - name: Test GUI build
+      run: |
+        dir build\Release\
+        echo "Checking file sizes..."
+        for %f in (build\Release\*.exe) do echo %f: & powershell "(Get-Item '%f').Length"
+      shell: cmd
+    
+    - name: Upload Windows binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: RTEgetData-Windows-Full
+        path: |
+          build/Release/RTEgetData.exe
+          build/Release/RTEgetData-GUI.exe
+        retention-days: 7

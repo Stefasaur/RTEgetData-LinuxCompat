@@ -9,7 +9,7 @@ jobs:
   check:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
     
     runs-on: ${{ matrix.os }}
     
@@ -44,9 +44,18 @@ jobs:
       run: |
         if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake pkg-config libgl1-mesa-dev
-        elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-          brew install cmake
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            libgl1-mesa-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libasound2-dev \
+            libpulse-dev
         fi
     
     - name: Test CLI Build

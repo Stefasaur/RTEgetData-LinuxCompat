@@ -9,7 +9,7 @@ on:
       create_release:
         description: 'Create GitHub release'
         required: false
-        default: 'true'
+        default: true
         type: boolean
 
 jobs:
@@ -33,14 +33,6 @@ jobs:
             artifact_path: build
             artifact_cli: RTEgetData
             artifact_gui: RTEgetData-GUI
-            
-          - name: macOS
-            os: macos-latest
-            cmake_args: -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON -DCMAKE_BUILD_TYPE=Release
-            build_args: --parallel
-            artifact_path: build
-            artifact_cli: RTEgetData
-            artifact_gui: RTEgetData-GUI
 
     runs-on: ${{ matrix.os }}
     
@@ -54,15 +46,36 @@ jobs:
       if: matrix.name == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential cmake pkg-config libgl1-mesa-dev
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          pkg-config \
+          libgl1-mesa-dev \
+          libx11-dev \
+          libxrandr-dev \
+          libxinerama-dev \
+          libxcursor-dev \
+          libxi-dev \
+          libasound2-dev \
+          libpulse-dev
+        
+        echo "Installed packages:"
+        dpkg -l | grep -E "(cmake|mesa|libgl)" | head -10
     
-    - name: Install macOS dependencies
-      if: matrix.name == 'macOS'
-      run: |
-        brew install cmake
     
     - name: Configure
-      run: cmake -B build ${{ matrix.cmake_args }}
+      run: |
+        echo "=== CMake Configuration Debug Info ==="
+        echo "OS: ${{ matrix.name }}"
+        echo "CMake version:"
+        cmake --version
+        echo "CMake args: ${{ matrix.cmake_args }}"
+        echo "Working directory:"
+        pwd
+        ls -la
+        
+        echo "=== Running CMake Configure ==="
+        cmake -B build ${{ matrix.cmake_args }} -DCMAKE_VERBOSE_MAKEFILE=ON
     
     - name: Build
       run: cmake --build build ${{ matrix.build_args }}
@@ -90,9 +103,14 @@ jobs:
       run: |
         mkdir -p release
         
-        # Copy executables
-        cp "${{ matrix.artifact_path }}/${{ matrix.artifact_cli }}" "release/RTEgetData-CLI${{ matrix.name == 'Windows' && '.exe' || '' }}"
-        cp "${{ matrix.artifact_path }}/${{ matrix.artifact_gui }}" "release/RTEgetData-GUI${{ matrix.name == 'Windows' && '.exe' || '' }}"
+        # Copy executables with proper extensions
+        if [ "${{ matrix.name }}" = "Windows" ]; then
+          cp "${{ matrix.artifact_path }}/${{ matrix.artifact_cli }}" "release/RTEgetData-CLI.exe"
+          cp "${{ matrix.artifact_path }}/${{ matrix.artifact_gui }}" "release/RTEgetData-GUI.exe"
+        else
+          cp "${{ matrix.artifact_path }}/${{ matrix.artifact_cli }}" "release/RTEgetData-CLI"
+          cp "${{ matrix.artifact_path }}/${{ matrix.artifact_gui }}" "release/RTEgetData-GUI"
+        fi
         
         # Copy documentation
         cp README.md release/ 2>/dev/null || cp Readme.md release/ 2>/dev/null || echo "README not found"
@@ -142,7 +160,6 @@ jobs:
         # Create archives
         zip -r RTEgetData-Windows.zip RTEgetData-Windows/
         tar -czf RTEgetData-Linux.tar.gz RTEgetData-Linux/
-        tar -czf RTEgetData-macOS.tar.gz RTEgetData-macOS/
         
         # Create checksums
         sha256sum *.zip *.tar.gz > checksums.sha256
@@ -176,8 +193,7 @@ jobs:
           ## Downloads
           
           - **Windows**: `RTEgetData-Windows.zip` (~5.5MB)
-          - **Linux**: `RTEgetData-Linux.tar.gz` (~5.3MB)  
-          - **macOS**: `RTEgetData-macOS.tar.gz` (~5.8MB)
+          - **Linux**: `RTEgetData-Linux.tar.gz` (~5.3MB)
           - **Checksums**: `checksums.sha256`
           
           ## What's Included

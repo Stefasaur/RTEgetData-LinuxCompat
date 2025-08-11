@@ -9,9 +9,9 @@ jobs:
   debug-windows:
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
         compiler: [msvc, mingw]
-        fail-fast: false
     
     steps:
     - name: Checkout code
