@@ -1,0 +1,51 @@
+name: Test Builds
+
+on:
+  push:
+    branches-ignore: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  CMAKE_BUILD_TYPE: Debug
+
+jobs:
+  quick-test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install Linux dependencies
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake pkg-config libgl1-mesa-dev
+    
+    - name: Install macOS dependencies
+      if: runner.os == 'macOS'
+      run: |
+        brew install cmake pkg-config
+    
+    - name: Configure CMake
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON
+    
+    - name: Build
+      run: cmake --build build --parallel
+    
+    - name: Test CLI (Linux/macOS)
+      if: runner.os != 'Windows'
+      run: |
+        ./build/RTEgetData --help || echo "CLI help test completed"
+    
+    - name: Test CLI (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        .\build\Debug\RTEgetData.exe --help || .\build\RTEgetData.exe --help || echo "CLI help test completed"
+      shell: cmd

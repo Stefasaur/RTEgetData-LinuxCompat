@@ -1,0 +1,42 @@
+name: Validate Workflows
+
+on:
+  push:
+    paths:
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+
+jobs:
+  validate-yaml:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Validate workflow YAML syntax
+      run: |
+        # Install yamllint
+        sudo apt-get update
+        sudo apt-get install -y yamllint
+        
+        # Check all workflow files
+        echo "Validating workflow YAML files..."
+        find .github/workflows -name "*.yml" -o -name "*.yaml" | while read file; do
+          echo "Validating $file"
+          yamllint "$file" || exit 1
+        done
+        
+        echo "All workflow files are valid!"
+    
+    - name: Check workflow file permissions
+      run: |
+        find .github/workflows -name "*.yml" -o -name "*.yaml" | while read file; do
+          if [ ! -r "$file" ]; then
+            echo "ERROR: $file is not readable"
+            exit 1
+          fi
+        done
+        echo "All workflow files have correct permissions!"

@@ -1,0 +1,312 @@
+name: Build and Release RTEgetData
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches: [ main, master, feat/* ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  CMAKE_BUILD_TYPE: Release
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - name: "Windows-x64-MSVC"
+            arch: x64
+            compiler: msvc
+          - name: "Windows-x64-MinGW"
+            arch: x64
+            compiler: mingw
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Setup MSVC (if needed)
+      if: matrix.compiler == 'msvc'
+      uses: microsoft/setup-msbuild@v2
+      with:
+        vs-version: latest
+    
+    - name: Setup MinGW (if needed)
+      if: matrix.compiler == 'mingw'
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        install: >-
+          mingw-w64-x86_64-toolchain
+          mingw-w64-x86_64-cmake
+          mingw-w64-x86_64-ninja
+    
+    - name: Configure CMake (MSVC)
+      if: matrix.compiler == 'msvc'
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON
+    
+    - name: Configure CMake (MinGW)
+      if: matrix.compiler == 'mingw'
+      shell: msys2 {0}
+      run: |
+        cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON
+    
+    - name: Build (MSVC)
+      if: matrix.compiler == 'msvc'
+      run: cmake --build build --config ${{env.CMAKE_BUILD_TYPE}} --parallel
+    
+    - name: Build (MinGW)
+      if: matrix.compiler == 'mingw'
+      shell: msys2 {0}
+      run: cmake --build build --parallel
+    
+    - name: Package Artifacts (MSVC)
+      if: matrix.compiler == 'msvc'
+      run: |
+        mkdir artifacts
+        copy "build\Release\RTEgetData.exe" "artifacts\RTEgetData-CLI.exe" || copy "build\RTEgetData.exe" "artifacts\RTEgetData-CLI.exe"
+        copy "build\Release\RTEgetData-GUI.exe" "artifacts\RTEgetData-GUI.exe" || copy "build\RTEgetData-GUI.exe" "artifacts\RTEgetData-GUI.exe"
+        copy "Readme.md" "artifacts\"
+        copy "LICENSE.md" "artifacts\"
+        copy "CHANGELOG.md" "artifacts\"
+        copy "BUILD.md" "artifacts\"
+    
+    - name: Package Artifacts (MinGW)
+      if: matrix.compiler == 'mingw'
+      shell: msys2 {0}
+      run: |
+        mkdir artifacts
+        cp build/RTEgetData.exe artifacts/RTEgetData-CLI.exe
+        cp build/RTEgetData-GUI.exe artifacts/RTEgetData-GUI.exe
+        cp Readme.md artifacts/
+        cp LICENSE.md artifacts/
+        cp CHANGELOG.md artifacts/
+        cp BUILD.md artifacts/
+    
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: RTEgetData-${{ matrix.name }}
+        path: artifacts/
+        retention-days: 90
+
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: "Ubuntu-20.04-x64"
+            container: ubuntu:20.04
+          - name: "Ubuntu-22.04-x64"
+            container: ubuntu:22.04
+          - name: "Ubuntu-Latest-x64"
+            container: null
+    
+    container: ${{ matrix.container }}
+    
+    steps:
+    - name: Install dependencies (Container)
+      if: matrix.container
+      run: |
+        apt-get update
+        apt-get install -y build-essential cmake git pkg-config libgl1-mesa-dev curl ca-certificates
+        # Update git for older containers
+        if [ "${{ matrix.container }}" = "ubuntu:20.04" ]; then
+          apt-get install -y software-properties-common
+          add-apt-repository ppa:git-core/ppa -y
+          apt-get update
+          apt-get install -y git
+        fi
+    
+    - name: Install dependencies (Native)
+      if: '!matrix.container'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake pkg-config libgl1-mesa-dev
+    
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Configure CMake
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON
+    
+    - name: Build
+      run: cmake --build build --parallel $(nproc)
+    
+    - name: Package Artifacts
+      run: |
+        mkdir artifacts
+        cp build/RTEgetData artifacts/RTEgetData-CLI
+        cp build/RTEgetData-GUI artifacts/RTEgetData-GUI
+        cp Readme.md artifacts/
+        cp LICENSE.md artifacts/
+        cp CHANGELOG.md artifacts/
+        cp BUILD.md artifacts/
+        # Create simple launcher scripts
+        echo '#!/bin/bash' > artifacts/run-cli.sh
+        echo './RTEgetData-CLI "$@"' >> artifacts/run-cli.sh
+        echo '#!/bin/bash' > artifacts/run-gui.sh
+        echo './RTEgetData-GUI "$@"' >> artifacts/run-gui.sh
+        chmod +x artifacts/run-*.sh artifacts/RTEgetData-*
+    
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: RTEgetData-Linux-${{ matrix.name }}
+        path: artifacts/
+        retention-days: 90
+
+  build-macos:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Install dependencies
+      run: |
+        brew install cmake pkg-config
+    
+    - name: Configure CMake
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON
+    
+    - name: Build
+      run: cmake --build build --parallel $(sysctl -n hw.ncpu)
+    
+    - name: Package Artifacts
+      run: |
+        mkdir artifacts
+        cp build/RTEgetData artifacts/RTEgetData-CLI
+        cp build/RTEgetData-GUI artifacts/RTEgetData-GUI
+        cp Readme.md artifacts/
+        cp LICENSE.md artifacts/
+        cp CHANGELOG.md artifacts/
+        cp BUILD.md artifacts/
+        # Create launcher scripts
+        echo '#!/bin/bash' > artifacts/run-cli.sh
+        echo './RTEgetData-CLI "$@"' >> artifacts/run-cli.sh
+        echo '#!/bin/bash' > artifacts/run-gui.sh
+        echo './RTEgetData-GUI "$@"' >> artifacts/run-gui.sh
+        chmod +x artifacts/run-*.sh artifacts/RTEgetData-*
+    
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: RTEgetData-macOS-x64
+        path: artifacts/
+        retention-days: 90
+
+  create-release:
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: all-artifacts/
+    
+    - name: Create Release Archives
+      run: |
+        cd all-artifacts
+        
+        # Create zip files for Windows
+        for dir in RTEgetData-Windows-*; do
+          if [ -d "$dir" ]; then
+            zip -r "${dir}.zip" "$dir"
+          fi
+        done
+        
+        # Create tar.gz files for Linux and macOS
+        for dir in RTEgetData-Linux-* RTEgetData-macOS-*; do
+          if [ -d "$dir" ]; then
+            tar -czf "${dir}.tar.gz" "$dir"
+          fi
+        done
+        
+        # Move archives to root
+        mv *.zip *.tar.gz ../
+        cd ..
+        
+        # Create checksums
+        sha256sum *.zip *.tar.gz > checksums.sha256
+    
+    - name: Extract version from tag
+      id: version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+    
+    - name: Read changelog
+      id: changelog
+      run: |
+        # Extract changelog for this version
+        VERSION="${{ steps.version.outputs.VERSION }}"
+        if [ -f "CHANGELOG.md" ]; then
+          # Try to extract the section for this version
+          awk "/^## \[$VERSION\]/{flag=1; next} /^## \[/{flag=0} flag" CHANGELOG.md > release_notes.md || true
+          if [ ! -s release_notes.md ]; then
+            echo "Release $VERSION" > release_notes.md
+            echo "" >> release_notes.md
+            echo "See [CHANGELOG.md](CHANGELOG.md) for detailed changes." >> release_notes.md
+          fi
+        else
+          echo "Release $VERSION" > release_notes.md
+        fi
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.VERSION }}
+        name: RTEgetData ${{ steps.version.outputs.VERSION }}
+        body_path: release_notes.md
+        draft: false
+        prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}
+        files: |
+          *.zip
+          *.tar.gz
+          checksums.sha256
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+  build-summary:
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Build Summary
+      run: |
+        echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Windows MSVC | ${{ needs.build-windows.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Windows MinGW | ${{ needs.build-windows.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Linux | ${{ needs.build-linux.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| macOS | ${{ needs.build-macos.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ github.event_name }}" = "push" ] && [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          echo "🎉 **Release build completed!**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Download the artifacts from the [Releases page](../../releases)." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "📦 **Development build completed!**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Artifacts are available for download from this workflow run." >> $GITHUB_STEP_SUMMARY
+        fi

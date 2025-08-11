@@ -1,0 +1,219 @@
+name: Manual Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v2.0.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        type: boolean
+        default: false
+      draft:
+        description: 'Create as draft release'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  CMAKE_BUILD_TYPE: Release
+
+jobs:
+  manual-build-all:
+    strategy:
+      matrix:
+        include:
+          # Windows builds
+          - os: windows-latest
+            name: "Windows-x64-MSVC"
+            compiler: msvc
+          
+          # Linux builds  
+          - os: ubuntu-20.04
+            name: "Linux-Ubuntu-20.04-x64"
+            compiler: gcc
+          - os: ubuntu-22.04
+            name: "Linux-Ubuntu-22.04-x64"
+            compiler: gcc
+          - os: ubuntu-latest
+            name: "Linux-Ubuntu-Latest-x64"
+            compiler: gcc
+            
+          # macOS build
+          - os: macos-latest
+            name: "macOS-x64"
+            compiler: clang
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Install Linux dependencies
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake pkg-config libgl1-mesa-dev
+    
+    - name: Install macOS dependencies
+      if: runner.os == 'macOS'
+      run: |
+        brew install cmake pkg-config
+    
+    - name: Setup MSVC
+      if: runner.os == 'Windows'
+      uses: microsoft/setup-msbuild@v2
+      with:
+        vs-version: latest
+    
+    - name: Configure CMake
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON
+    
+    - name: Build
+      run: cmake --build build --config ${{env.CMAKE_BUILD_TYPE}} --parallel
+    
+    - name: Package Windows
+      if: runner.os == 'Windows'
+      run: |
+        mkdir artifacts
+        copy "build\Release\RTEgetData.exe" "artifacts\RTEgetData-CLI.exe" 2>nul || copy "build\RTEgetData.exe" "artifacts\RTEgetData-CLI.exe"
+        copy "build\Release\RTEgetData-GUI.exe" "artifacts\RTEgetData-GUI.exe" 2>nul || copy "build\RTEgetData-GUI.exe" "artifacts\RTEgetData-GUI.exe"
+        copy "Readme.md" "artifacts\"
+        copy "LICENSE.md" "artifacts\"
+        copy "CHANGELOG.md" "artifacts\"
+        copy "BUILD.md" "artifacts\"
+        
+        echo @echo off > artifacts\run-cli.bat
+        echo RTEgetData-CLI.exe %%* >> artifacts\run-cli.bat
+        echo @echo off > artifacts\run-gui.bat  
+        echo RTEgetData-GUI.exe %%* >> artifacts\run-gui.bat
+    
+    - name: Package Unix
+      if: runner.os != 'Windows'
+      run: |
+        mkdir artifacts
+        cp build/RTEgetData artifacts/RTEgetData-CLI
+        cp build/RTEgetData-GUI artifacts/RTEgetData-GUI
+        cp Readme.md artifacts/
+        cp LICENSE.md artifacts/
+        cp CHANGELOG.md artifacts/
+        cp BUILD.md artifacts/
+        
+        echo '#!/bin/bash' > artifacts/run-cli.sh
+        echo './RTEgetData-CLI "$@"' >> artifacts/run-cli.sh
+        echo '#!/bin/bash' > artifacts/run-gui.sh
+        echo './RTEgetData-GUI "$@"' >> artifacts/run-gui.sh
+        chmod +x artifacts/run-*.sh artifacts/RTEgetData-*
+    
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: RTEgetData-${{ matrix.name }}
+        path: artifacts/
+        retention-days: 30
+
+  create-manual-release:
+    needs: manual-build-all
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: all-artifacts/
+    
+    - name: Create Release Archives
+      run: |
+        cd all-artifacts
+        
+        # Create zip files for Windows
+        for dir in RTEgetData-Windows-*; do
+          if [ -d "$dir" ]; then
+            zip -r "${dir}.zip" "$dir"
+          fi
+        done
+        
+        # Create tar.gz files for Linux and macOS
+        for dir in RTEgetData-Linux-* RTEgetData-macOS-*; do
+          if [ -d "$dir" ]; then
+            tar -czf "${dir}.tar.gz" "$dir"
+          fi
+        done
+        
+        # Move archives to root
+        mv *.zip *.tar.gz ../
+        cd ..
+        
+        # Create checksums
+        sha256sum *.zip *.tar.gz > checksums.sha256
+        
+        # List what we created
+        echo "Created release files:"
+        ls -la *.zip *.tar.gz checksums.sha256
+    
+    - name: Prepare release notes
+      run: |
+        VERSION="${{ github.event.inputs.version }}"
+        echo "# RTEgetData $VERSION" > release_notes.md
+        echo "" >> release_notes.md
+        echo "Cross-platform data transfer utility for embedded systems." >> release_notes.md
+        echo "" >> release_notes.md
+        echo "## Downloads" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "Choose the appropriate download for your operating system:" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "### Windows" >> release_notes.md
+        echo "- **RTEgetData-Windows-x64-MSVC.zip** - Recommended for most users" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "### Linux" >> release_notes.md
+        echo "- **RTEgetData-Linux-Ubuntu-Latest-x64.tar.gz** - For modern Linux distributions" >> release_notes.md
+        echo "- **RTEgetData-Linux-Ubuntu-20.04-x64.tar.gz** - For older distributions" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "### macOS" >> release_notes.md
+        echo "- **RTEgetData-macOS-x64.tar.gz** - For Intel-based Macs" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "## What's Included" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "Each download contains:" >> release_notes.md
+        echo "- **CLI version**: Command-line interface (~60KB)" >> release_notes.md
+        echo "- **GUI version**: Graphical interface (~5MB)" >> release_notes.md
+        echo "- **Documentation**: README, build instructions, and changelog" >> release_notes.md
+        echo "- **Launcher scripts**: Easy-to-use startup scripts" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "## Verification" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "Download **checksums.sha256** to verify file integrity:" >> release_notes.md
+        echo '```bash' >> release_notes.md
+        echo 'sha256sum -c checksums.sha256' >> release_notes.md
+        echo '```' >> release_notes.md
+        echo "" >> release_notes.md
+        if [ -f "CHANGELOG.md" ]; then
+          echo "## Changes" >> release_notes.md
+          echo "" >> release_notes.md
+          # Try to extract version-specific changelog
+          awk "/^## \[${VERSION#v}\]/{flag=1; next} /^## \[/{flag=0} flag" CHANGELOG.md >> release_notes.md || echo "See CHANGELOG.md for detailed changes." >> release_notes.md
+        fi
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.event.inputs.version }}
+        name: RTEgetData ${{ github.event.inputs.version }}
+        body_path: release_notes.md
+        draft: ${{ github.event.inputs.draft }}
+        prerelease: ${{ github.event.inputs.prerelease }}
+        files: |
+          *.zip
+          *.tar.gz
+          checksums.sha256
+        token: ${{ secrets.GITHUB_TOKEN }}
