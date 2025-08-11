@@ -67,11 +67,11 @@ jobs:
       shell: bash
       run: |
         if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-          ls -la build-cli/Release/ || dir build-cli\\Release\\
-          ./build-cli/Release/RTEgetData.exe --help || echo "CLI test completed"
+          ls -la build-cli/Release/ 2>/dev/null || dir build-cli\\Release\\
+          if [ -f "build-cli/Release/RTEgetData.exe" ]; then echo "CLI executable built successfully"; else echo "CLI executable not found"; exit 1; fi
         else
           ls -la build-cli/
-          ./build-cli/RTEgetData --help || echo "CLI test completed" 
+          if [ -f "build-cli/RTEgetData" ]; then echo "CLI executable built successfully"; else echo "CLI executable not found"; exit 1; fi
         fi
     
     - name: Test GUI Build

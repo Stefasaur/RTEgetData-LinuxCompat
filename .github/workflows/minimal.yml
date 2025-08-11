@@ -26,7 +26,7 @@ jobs:
     - name: Test CLI
       run: |
         ls -la build/
-        ./build/RTEgetData --help || echo "CLI executable works"
+        if [ -f "build/RTEgetData" ]; then echo "CLI executable built successfully"; else exit 1; fi
     
     - name: Upload CLI
       uses: actions/upload-artifact@v4
@@ -50,7 +50,7 @@ jobs:
     - name: Test CLI
       run: |
         dir build\Release\
-        build\Release\RTEgetData.exe --help || echo "CLI executable works"
+        if (Test-Path "build\Release\RTEgetData.exe") { echo "CLI executable built successfully" } else { exit 1 }
     
     - name: Upload CLI
       uses: actions/upload-artifact@v4
@@ -121,9 +121,8 @@ jobs:
     - name: Test GUI build
       run: |
         dir build\Release\
-        echo "Checking file sizes..."
-        for %f in (build\Release\*.exe) do echo %f: & powershell "(Get-Item '%f').Length"
-      shell: cmd
+        if (Test-Path "build\Release\RTEgetData.exe") { echo "CLI executable: $((Get-Item 'build\Release\RTEgetData.exe').Length) bytes" } else { echo "CLI executable not found"; exit 1 }
+        if (Test-Path "build\Release\RTEgetData-GUI.exe") { echo "GUI executable: $((Get-Item 'build\Release\RTEgetData-GUI.exe').Length) bytes" } else { echo "GUI executable not found"; exit 1 }
     
     - name: Upload Windows binaries
       uses: actions/upload-artifact@v4
