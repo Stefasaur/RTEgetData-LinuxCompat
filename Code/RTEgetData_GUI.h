@@ -47,7 +47,7 @@ public:
 private:
     // GUI State Management
     enum class ConnectionType { GDB_SERVER, COM_PORT };
-    enum class OperationState { IDLE, CONNECTING, TRANSFERRING, COMPLETED, ERROR };
+    enum class OperationState { IDLE, CONNECTING, TRANSFERRING, COMPLETED, FAILED };
 
     // GUI Windows
     void ShowMainWindow();

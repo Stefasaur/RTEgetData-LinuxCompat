@@ -30,6 +30,9 @@
     #include "imgui_impl_opengl3.h"
     #include <GLFW/glfw3.h>
     #ifdef _WIN32
+        #ifndef WIN32_LEAN_AND_MEAN
+            #define WIN32_LEAN_AND_MEAN
+        #endif
         #include <windows.h>
         #include <GL/gl.h>
     #else
@@ -47,6 +50,9 @@
 #include <regex>
 #include <algorithm>
 #ifdef _WIN32
+    #ifndef WIN32_LEAN_AND_MEAN
+        #define WIN32_LEAN_AND_MEAN
+    #endif
     #include <windows.h>
     #include <setupapi.h>
     #include <devguid.h>
@@ -69,7 +75,7 @@ static void glfw_error_callback(int error, const char* description) {
 
 RTEgetDataGUI::RTEgetDataGUI() {
     g_gui_instance = this;
-    m_currentDirectory = std::filesystem::current_path();
+    m_currentDirectory = std::filesystem::current_path().string();
 }
 
 RTEgetDataGUI::~RTEgetDataGUI() {
@@ -537,7 +543,7 @@ void RTEgetDataGUI::ShowMainWindow() {
     ImGui::Separator();
 
     // Action Buttons
-    bool can_connect = ((m_operationState == OperationState::IDLE || m_operationState == OperationState::ERROR) && !m_isConnected);
+    bool can_connect = ((m_operationState == OperationState::IDLE || m_operationState == OperationState::FAILED) && !m_isConnected);
     bool can_transfer = (m_isConnected && m_operationState != OperationState::TRANSFERRING);
     bool can_disconnect = m_isConnected;
     
@@ -545,7 +551,7 @@ void RTEgetDataGUI::ShowMainWindow() {
         ImGui::BeginDisabled();
     }
     
-    const char* connect_label = (m_operationState == OperationState::ERROR) ? "Retry Connection" : "Connect";
+    const char* connect_label = (m_operationState == OperationState::FAILED) ? "Retry Connection" : "Connect";
     if (ImGui::Button(connect_label)) {
         StartBackgroundTask([this]() { 
             ConnectToTarget();
@@ -636,7 +642,7 @@ void RTEgetDataGUI::ShowMainWindow() {
         case OperationState::COMPLETED:
             ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Completed");
             break;
-        case OperationState::ERROR:
+        case OperationState::FAILED:
             ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Error - Ready to retry");
             break;
     }
@@ -829,7 +835,7 @@ void RTEgetDataGUI::ConnectToTarget() {
         m_progress.current_operation = "Connected";
         m_progress.progress = 1.0f;
     } else {
-        m_operationState = OperationState::ERROR;
+        m_operationState = OperationState::FAILED;
         std::string error_msg = "Connection failed";
         
         // Get specific error message
@@ -914,16 +920,16 @@ void RTEgetDataGUI::TransferData() {
                     m_progress.current_operation = "Transfer complete";
                     m_progress.progress = 1.0f;
                 } else {
-                    m_operationState = OperationState::ERROR;
+                    m_operationState = OperationState::FAILED;
                     AddLogMessage("Error writing to file: Only " + std::to_string(written) + 
                                  " of " + std::to_string(size) + " bytes written", 2);
                 }
             } else {
-                m_operationState = OperationState::ERROR;
+                m_operationState = OperationState::FAILED;
                 AddLogMessage("Error: Cannot create output file: " + std::string(m_transfer.output_file), 2);
             }
         } else {
-            m_operationState = OperationState::ERROR;
+            m_operationState = OperationState::FAILED;
             std::string error_msg = "Memory read failed";
             
             // Get specific error message based on connection type
@@ -1053,7 +1059,7 @@ void RTEgetDataGUI::BackgroundWorker() {
                 task();
             } catch (const std::exception& e) {
                 AddLogMessage("Error: " + std::string(e.what()), 2);
-                m_operationState = OperationState::ERROR;
+                m_operationState = OperationState::FAILED;
             }
         }
         

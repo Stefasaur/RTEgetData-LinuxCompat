@@ -14,7 +14,6 @@
  *          communication mode.
  ******************************************************************************/
 
-#define _CRT_SECURE_NO_WARNINGS
 #include "pch.h"
 #include <stdint.h>
 #include <cstring>
@@ -489,8 +488,8 @@ static DWORD GetProcessIdByName(const char* processName)
         return 0;
     }
 
-    PROCESSENTRY32 processEntry;
-    processEntry.dwSize = sizeof(PROCESSENTRY32);
+    PROCESSENTRY32W processEntry;
+    processEntry.dwSize = sizeof(PROCESSENTRY32W);
 
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
 
@@ -509,7 +508,7 @@ static DWORD GetProcessIdByName(const char* processName)
         return 0;
     }
 
-    if (Process32First(snapshot, &processEntry))
+    if (Process32FirstW(snapshot, &processEntry))
     {
         do
         {
@@ -518,7 +517,7 @@ static DWORD GetProcessIdByName(const char* processName)
                 (void)CloseHandle(snapshot);
                 return processEntry.th32ProcessID;
             }
-        } while (Process32Next(snapshot, &processEntry));
+        } while (Process32NextW(snapshot, &processEntry));
     }
 
     (void)CloseHandle(snapshot);

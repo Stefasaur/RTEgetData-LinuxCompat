@@ -213,6 +213,7 @@ function(configure_platform_specific target)
     # Compiler-specific settings
     if(MSVC)
         target_compile_options(${target} PRIVATE /W3)
+        target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
     else()
         target_compile_options(${target} PRIVATE -O2)
     endif()

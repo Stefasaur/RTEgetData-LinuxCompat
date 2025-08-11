@@ -36,6 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Memory Management**: Thread-safe operations and proper resource cleanup
 - **Connection Stability**: Fixed single-connection limitation, now supports reconnection
 - **GUI Layout**: Improved from nested windows to integrated single-window design
+- **Windows Build Errors** (2025-08-11):
+  - Fixed `CreateFileW` API call for wide character string compatibility in `com_lib.cpp`
+  - Fixed `std::filesystem::path` to `std::string` conversion in `RTEgetData_GUI.cpp`
+  - Resolved `ERROR` macro conflict by renaming enum value to `FAILED`
+  - Fixed WinSock header conflicts by adding `WIN32_LEAN_AND_MEAN` definition
+  - Fixed `PROCESSENTRY32W` and wide character API usage in `bridge.cpp`
+  - Added `_CRT_SECURE_NO_WARNINGS` to suppress MSVC deprecation warnings
 
 ### Technical Details
 

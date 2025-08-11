@@ -119,8 +119,8 @@ int com_open(void)
     log_string("Open port %s: ", parameters.com_port.name);
 
     // Attempt to open COM port
-    h_com_port = CreateFile(
-        port_name,                      // Port name
+    h_com_port = CreateFileW(
+        port_name,                      // Port name (wide string)
         GENERIC_READ | GENERIC_WRITE,   // Read/Write access
         0,                              // No sharing
         NULL,                           // No security attributes

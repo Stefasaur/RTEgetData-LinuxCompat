@@ -15,6 +15,9 @@
 #include <stdio.h>
 
 #ifdef _WIN32
+    #ifndef WIN32_LEAN_AND_MEAN
+        #define WIN32_LEAN_AND_MEAN
+    #endif
     #include <conio.h>
     #include <windows.h>
     #define kbhit() _kbhit()

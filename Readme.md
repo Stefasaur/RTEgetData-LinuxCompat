@@ -6,6 +6,7 @@ The GDB server software is either part of the Debug Probe software or a separate
 
 ## Table of contents
 * [Introduction](#Introduction)
+* [Cross-Platform Build Compatibility](#cross-platform-build-compatibility)
 * [RTEgetData Command Line Arguments](#rtegetdata-command-line-arguments)
 * [Multiple Data Transfers in the Persistent Mode of Operation](#multiple-data-transfers-in-the-persistent-mode-of-operation)
 * [How to Obtain the Address of the Data Logging Structure](#how-to-obtain-the-address-of-the-data-logging-structure)
@@ -48,6 +49,56 @@ When the utility is started, data can be transferred once or several times in a 
 7. The GDB serial port protocol is not supported in this release. Therefore, debug probes such as the Black Magic cannot be used. For debug probes that are not supported, you can save the contents of the data logging structure to a file via the IDE - see an example in the RTEdbg manual - section *Save Embedded System Memory to a File Using an Eclipse IDE*.
 
 See the **RTEdbg Manual** for information on how to transfer data to the host using command line utilities for the J-Link or ST-LINK debug probes (section *'Using a Debug Probe to Transfer Data to a Host'*). See also the description *'Save Embedded System Memory to a File Using an Eclipse IDE'*.
+
+<br>
+
+## Cross-Platform Build Compatibility
+
+RTEgetData now features full cross-platform support with both CLI and GUI versions available for Windows, Linux, and macOS. The project uses a modern CMake build system that ensures consistent behavior across all platforms.
+
+### Building the Project
+
+The project provides convenient build scripts for each platform:
+- **Windows**: `build.bat` (uses MSVC compiler)
+- **Linux/macOS**: `build.sh` (uses GCC or Clang)
+- **Windows MinGW**: `build-mingw.bat` (alternative for Windows)
+
+All scripts automatically:
+- Download required dependencies (ImGui, SDL2/GLFW)
+- Configure the build with optimal settings
+- Create self-contained executables with static linking
+- Build both CLI and GUI versions
+
+### Platform-Specific Considerations
+
+**Windows:**
+- Requires Visual Studio 2019+ or MinGW-w64
+- COM ports are accessed as `COM1`, `COM2`, etc.
+- Uses Windows API for serial communication
+- Supports wide character APIs for proper Unicode handling
+
+**Linux:**
+- Requires GCC/Clang with C++17 support
+- Serial ports are accessed as `/dev/ttyUSB0`, `/dev/ttyACM0`, etc.
+- Uses POSIX termios API for serial communication
+- User must be in `dialout` group for serial port access: `sudo usermod -a -G dialout $USER`
+
+**macOS:**
+- Requires Xcode Command Line Tools
+- Serial ports are accessed as `/dev/tty.*` or `/dev/cu.*`
+- Similar to Linux in most respects
+
+### Recent Build Fixes (v2.0.0)
+
+The following cross-platform compatibility issues were resolved:
+- Fixed Windows API calls to use proper wide character functions (`CreateFileW`)
+- Resolved `std::filesystem::path` type conversions
+- Fixed macro conflicts with Windows system headers (renamed `ERROR` enum to `FAILED`)
+- Addressed WinSock header ordering issues with `WIN32_LEAN_AND_MEAN`
+- Corrected process enumeration API usage (`PROCESSENTRY32W`)
+- Added proper compiler warning suppressions
+
+For detailed build instructions, see [BUILD.md](BUILD.md). For a complete list of changes, see [CHANGELOG.md](CHANGELOG.md).
 
 <br>
 
