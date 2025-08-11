@@ -316,11 +316,25 @@ void RTEgetDataGUI::Shutdown() {
 }
 
 void RTEgetDataGUI::ShowMainWindow() {
-    // Create main window using most of the screen
-    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y), ImGuiCond_FirstUseEver);
+    // Create a fullscreen window that fills the entire application window
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     
-    ImGui::Begin("RTEgetData", nullptr, ImGuiWindowFlags_MenuBar);
+    // Create window flags for a non-movable, non-resizable window
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar;
+    window_flags |= ImGuiWindowFlags_NoTitleBar;
+    window_flags |= ImGuiWindowFlags_NoCollapse;
+    window_flags |= ImGuiWindowFlags_NoResize;
+    window_flags |= ImGuiWindowFlags_NoMove;
+    window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus;
+    
+    // Remove window padding and rounding to make it look integrated
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    
+    ImGui::Begin("RTEgetData##MainWindow", nullptr, window_flags);
+    
+    ImGui::PopStyleVar(2);
     
     // Create main layout with splitter
     ImGui::Columns(2, "MainLayout", true);
