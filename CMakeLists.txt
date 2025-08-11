@@ -181,9 +181,17 @@ if(BUILD_GUI)
         
         # Windows-specific settings for static linking
         if(WIN32 AND GUI_STATIC_LINK)
-            set_target_properties(RTEgetData-GUI PROPERTIES
-                LINK_FLAGS "-static -static-libgcc -static-libstdc++"
-            )
+            if(MINGW)
+                set_target_properties(RTEgetData-GUI PROPERTIES
+                    LINK_FLAGS "-static -static-libgcc -static-libstdc++ -Wl,--subsystem,windows"
+                )
+                # Additional MinGW-specific libraries
+                target_link_libraries(RTEgetData-GUI gdi32 winmm imm32 ole32 oleaut32 version uuid setupapi)
+            else()
+                set_target_properties(RTEgetData-GUI PROPERTIES
+                    LINK_FLAGS "-static -static-libgcc -static-libstdc++"
+                )
+            endif()
         endif()
         
     else()
@@ -214,6 +222,14 @@ function(configure_platform_specific target)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W3)
         target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
+    elseif(MINGW)
+        target_compile_options(${target} PRIVATE -Wall -Wextra -O2)
+        target_compile_definitions(${target} PRIVATE 
+            _WIN32_WINNT=0x0601 
+            WINVER=0x0601
+            UNICODE 
+            _UNICODE
+        )
     else()
         target_compile_options(${target} PRIVATE -O2)
     endif()

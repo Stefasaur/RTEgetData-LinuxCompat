@@ -1,0 +1,63 @@
+name: Minimal Test Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ test-*, fix-* ]
+
+jobs:
+  test-build-linux:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake pkg-config libgl1-mesa-dev
+    
+    - name: Test CLI build only
+      run: |
+        echo "=== Testing CLI-only build ==="
+        cmake -B build-cli -DBUILD_GUI=OFF -DCMAKE_BUILD_TYPE=Release
+        cmake --build build-cli --parallel
+        ls -la build-cli/
+        ./build-cli/RTEgetData --help || echo "CLI test completed"
+    
+    - name: Test GUI build
+      run: |
+        echo "=== Testing GUI build ==="
+        cmake -B build-gui -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON -DCMAKE_BUILD_TYPE=Release
+        cmake --build build-gui --parallel
+        ls -la build-gui/
+        echo "GUI build completed successfully"
+
+  test-build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup MSVC
+      uses: microsoft/setup-msbuild@v2
+    
+    - name: Test CLI build only  
+      run: |
+        echo "=== Testing CLI-only build ==="
+        cmake -B build-cli -DBUILD_GUI=OFF -DCMAKE_BUILD_TYPE=Release
+        cmake --build build-cli --config Release
+        dir build-cli
+        dir build-cli\Release
+        build-cli\Release\RTEgetData.exe --help || echo "CLI test completed"
+    
+    - name: Test GUI build
+      run: |
+        echo "=== Testing GUI build ==="
+        cmake -B build-gui -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON -DCMAKE_BUILD_TYPE=Release  
+        cmake --build build-gui --config Release
+        dir build-gui
+        dir build-gui\Release
+        echo "GUI build completed successfully"

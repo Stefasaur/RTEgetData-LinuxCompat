@@ -1,0 +1,113 @@
+name: Debug Build Issues
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ debug-build ]
+
+jobs:
+  debug-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        compiler: [msvc, mingw]
+        fail-fast: false
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Setup MSVC (if needed)
+      if: matrix.compiler == 'msvc'
+      uses: microsoft/setup-msbuild@v2
+      with:
+        vs-version: latest
+    
+    - name: Setup MinGW (if needed)
+      if: matrix.compiler == 'mingw'
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          mingw-w64-x86_64-toolchain
+          mingw-w64-x86_64-cmake
+          mingw-w64-x86_64-ninja
+          mingw-w64-x86_64-pkg-config
+
+    - name: Debug Environment (MinGW)
+      if: matrix.compiler == 'mingw'
+      shell: msys2 {0}
+      run: |
+        echo "=== Environment Check ==="
+        which gcc
+        which g++
+        which cmake
+        gcc --version
+        g++ --version
+        cmake --version
+        
+        echo "=== PKG-CONFIG Check ==="
+        pkg-config --version || echo "pkg-config not found"
+        
+        echo "=== Available packages ==="
+        pacman -Q | grep mingw | head -20
+    
+    - name: Debug Environment (MSVC)
+      if: matrix.compiler == 'msvc'
+      run: |
+        echo "=== Environment Check ==="
+        where cl
+        where cmake
+        cl
+        cmake --version
+    
+    - name: Test Simple CMake (MSVC)
+      if: matrix.compiler == 'msvc'
+      run: |
+        echo "=== Testing CLI-only build ==="
+        cmake -B build-test -DBUILD_GUI=OFF
+        cmake --build build-test --config Release
+        dir build-test
+        dir build-test\Release
+    
+    - name: Test Simple CMake (MinGW)
+      if: matrix.compiler == 'mingw'
+      shell: msys2 {0}
+      run: |
+        echo "=== Testing CLI-only build ==="
+        cmake -B build-test -G "Ninja" -DBUILD_GUI=OFF -DCMAKE_BUILD_TYPE=Release
+        cmake --build build-test
+        ls -la build-test/
+    
+    - name: Test GUI Build (MSVC)
+      if: matrix.compiler == 'msvc'
+      run: |
+        echo "=== Testing GUI build ==="
+        cmake -B build-gui -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON
+        cmake --build build-gui --config Release --verbose
+    
+    - name: Test GUI Build (MinGW) 
+      if: matrix.compiler == 'mingw'
+      shell: msys2 {0}
+      run: |
+        echo "=== Testing GUI build ==="
+        cmake -B build-gui -G "Ninja" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DBUILD_GUI=ON \
+          -DGUI_USE_SDL2=ON \
+          -DGUI_STATIC_LINK=ON \
+          -DCMAKE_VERBOSE_MAKEFILE=ON
+        cmake --build build-gui --verbose
+    
+    - name: Upload Build Logs
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs-${{ matrix.compiler }}
+        path: |
+          build-test/
+          build-gui/
+        retention-days: 7

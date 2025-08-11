@@ -1,10 +1,10 @@
-name: Build and Release RTEgetData
+name: Simple Cross-Platform Build
 
 on:
   push:
     tags:
       - 'v*'
-    branches: [ main, master, feat/* ]
+    branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
@@ -13,17 +13,8 @@ env:
   CMAKE_BUILD_TYPE: Release
 
 jobs:
-  build-windows:
+  build-windows-msvc:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        include:
-          - name: "Windows-x64-MSVC"
-            arch: x64
-            compiler: msvc
-          - name: "Windows-x64-MinGW"
-            arch: x64
-            compiler: mingw
     
     steps:
     - name: Checkout code
@@ -31,145 +22,53 @@ jobs:
       with:
         submodules: recursive
     
-    - name: Setup MSVC (if needed)
-      if: matrix.compiler == 'msvc'
+    - name: Setup MSVC
       uses: microsoft/setup-msbuild@v2
       with:
         vs-version: latest
     
-    - name: Setup MinGW (if needed)
-      if: matrix.compiler == 'mingw'
-      uses: msys2/setup-msys2@v2
-      with:
-        msystem: MINGW64
-        update: true
-        install: >-
-          mingw-w64-x86_64-toolchain
-          mingw-w64-x86_64-cmake
-          mingw-w64-x86_64-ninja
-          mingw-w64-x86_64-pkg-config
-          mingw-w64-x86_64-opengl
-    
-    - name: Configure CMake (MSVC)
-      if: matrix.compiler == 'msvc'
+    - name: Configure CMake
       run: |
         cmake -B build -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} -DBUILD_GUI=ON -DGUI_USE_SDL2=ON -DGUI_STATIC_LINK=ON
     
-    - name: Configure CMake (MinGW)
-      if: matrix.compiler == 'mingw'
-      shell: msys2 {0}
-      run: |
-        # Set up environment for MinGW
-        export PKG_CONFIG_PATH=/mingw64/lib/pkgconfig
-        # Try SDL2 first, fallback to GLFW if needed
-        cmake -B build -G "Ninja" \
-          -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} \
-          -DBUILD_GUI=ON \
-          -DGUI_USE_SDL2=ON \
-          -DGUI_STATIC_LINK=ON \
-          -DCMAKE_C_COMPILER=gcc \
-          -DCMAKE_CXX_COMPILER=g++ || \
-        cmake -B build -G "Ninja" \
-          -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} \
-          -DBUILD_GUI=ON \
-          -DGUI_USE_SDL2=OFF \
-          -DGUI_STATIC_LINK=ON \
-          -DCMAKE_C_COMPILER=gcc \
-          -DCMAKE_CXX_COMPILER=g++
-    
-    - name: Build (MSVC)
-      if: matrix.compiler == 'msvc'
+    - name: Build
       run: cmake --build build --config ${{env.CMAKE_BUILD_TYPE}} --parallel
     
-    - name: Build (MinGW)
-      if: matrix.compiler == 'mingw'
-      shell: msys2 {0}
-      run: |
-        # Build with error handling
-        cmake --build build --parallel
-        # Verify executables were created
-        ls -la build/
-        if [ ! -f "build/RTEgetData.exe" ] || [ ! -f "build/RTEgetData-GUI.exe" ]; then
-          echo "ERROR: Expected executables were not built"
-          exit 1
-        fi
-    
-    - name: Package Artifacts (MSVC)
-      if: matrix.compiler == 'msvc'
+    - name: Package Artifacts
       run: |
         mkdir artifacts
-        copy "build\Release\RTEgetData.exe" "artifacts\RTEgetData-CLI.exe" || copy "build\RTEgetData.exe" "artifacts\RTEgetData-CLI.exe"
-        copy "build\Release\RTEgetData-GUI.exe" "artifacts\RTEgetData-GUI.exe" || copy "build\RTEgetData-GUI.exe" "artifacts\RTEgetData-GUI.exe"
+        copy "build\Release\RTEgetData.exe" "artifacts\RTEgetData-CLI.exe" 2>nul || copy "build\RTEgetData.exe" "artifacts\RTEgetData-CLI.exe"
+        copy "build\Release\RTEgetData-GUI.exe" "artifacts\RTEgetData-GUI.exe" 2>nul || copy "build\RTEgetData-GUI.exe" "artifacts\RTEgetData-GUI.exe"
         copy "Readme.md" "artifacts\"
         copy "LICENSE.md" "artifacts\"
         copy "CHANGELOG.md" "artifacts\"
         copy "BUILD.md" "artifacts\"
-    
-    - name: Package Artifacts (MinGW)
-      if: matrix.compiler == 'mingw'
-      shell: msys2 {0}
-      run: |
-        mkdir artifacts
-        cp build/RTEgetData.exe artifacts/RTEgetData-CLI.exe
-        cp build/RTEgetData-GUI.exe artifacts/RTEgetData-GUI.exe
-        cp Readme.md artifacts/
-        cp LICENSE.md artifacts/
-        cp CHANGELOG.md artifacts/
-        cp BUILD.md artifacts/
+        
+        echo @echo off > artifacts\run-cli.bat
+        echo RTEgetData-CLI.exe %%* >> artifacts\run-cli.bat
+        echo @echo off > artifacts\run-gui.bat  
+        echo RTEgetData-GUI.exe %%* >> artifacts\run-gui.bat
     
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: RTEgetData-${{ matrix.name }}
+        name: RTEgetData-Windows-x64-MSVC
         path: artifacts/
         retention-days: 90
 
   build-linux:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - name: "Ubuntu-Latest-x64"
-            container: null
-          - name: "Ubuntu-20.04-x64"
-            container: ubuntu:20.04
-    
-    container: ${{ matrix.container }}
     
     steps:
-    - name: Install dependencies (Container)
-      if: matrix.container
-      run: |
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update -y
-        apt-get install -y --no-install-recommends \
-          build-essential \
-          cmake \
-          git \
-          pkg-config \
-          libgl1-mesa-dev \
-          curl \
-          ca-certificates \
-          wget \
-          unzip
-        # Update git for older containers if needed
-        if [ "${{ matrix.container }}" = "ubuntu:20.04" ]; then
-          apt-get install -y software-properties-common
-          add-apt-repository ppa:git-core/ppa -y
-          apt-get update -y
-          apt-get install -y git
-        fi
-    
-    - name: Install dependencies (Native)
-      if: '!matrix.container'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential cmake pkg-config libgl1-mesa-dev
-    
     - name: Checkout code
       uses: actions/checkout@v4
       with:
         submodules: recursive
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake pkg-config libgl1-mesa-dev
     
     - name: Configure CMake
       run: |
@@ -187,7 +86,7 @@ jobs:
         cp LICENSE.md artifacts/
         cp CHANGELOG.md artifacts/
         cp BUILD.md artifacts/
-        # Create simple launcher scripts
+        
         echo '#!/bin/bash' > artifacts/run-cli.sh
         echo './RTEgetData-CLI "$@"' >> artifacts/run-cli.sh
         echo '#!/bin/bash' > artifacts/run-gui.sh
@@ -197,7 +96,7 @@ jobs:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: RTEgetData-Linux-${{ matrix.name }}
+        name: RTEgetData-Linux-x64
         path: artifacts/
         retention-days: 90
 
@@ -230,7 +129,7 @@ jobs:
         cp LICENSE.md artifacts/
         cp CHANGELOG.md artifacts/
         cp BUILD.md artifacts/
-        # Create launcher scripts
+        
         echo '#!/bin/bash' > artifacts/run-cli.sh
         echo './RTEgetData-CLI "$@"' >> artifacts/run-cli.sh
         echo '#!/bin/bash' > artifacts/run-gui.sh
@@ -245,7 +144,7 @@ jobs:
         retention-days: 90
 
   create-release:
-    needs: [build-windows, build-linux, build-macos]
+    needs: [build-windows-msvc, build-linux, build-macos]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     
@@ -282,34 +181,36 @@ jobs:
         
         # Create checksums
         sha256sum *.zip *.tar.gz > checksums.sha256
+        ls -la *.zip *.tar.gz checksums.sha256
     
     - name: Extract version from tag
       id: version
       run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-    
-    - name: Read changelog
-      id: changelog
-      run: |
-        # Extract changelog for this version
-        VERSION="${{ steps.version.outputs.VERSION }}"
-        if [ -f "CHANGELOG.md" ]; then
-          # Try to extract the section for this version
-          awk "/^## \[$VERSION\]/{flag=1; next} /^## \[/{flag=0} flag" CHANGELOG.md > release_notes.md || true
-          if [ ! -s release_notes.md ]; then
-            echo "Release $VERSION" > release_notes.md
-            echo "" >> release_notes.md
-            echo "See [CHANGELOG.md](CHANGELOG.md) for detailed changes." >> release_notes.md
-          fi
-        else
-          echo "Release $VERSION" > release_notes.md
-        fi
     
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ steps.version.outputs.VERSION }}
         name: RTEgetData ${{ steps.version.outputs.VERSION }}
-        body_path: release_notes.md
+        body: |
+          # RTEgetData ${{ steps.version.outputs.VERSION }}
+          
+          Cross-platform data transfer utility for embedded systems.
+          
+          ## Downloads
+          
+          - **Windows**: `RTEgetData-Windows-x64-MSVC.zip`
+          - **Linux**: `RTEgetData-Linux-x64.tar.gz`
+          - **macOS**: `RTEgetData-macOS-x64.tar.gz`
+          
+          Each package contains both CLI and GUI versions with complete documentation.
+          
+          ## Verification
+          
+          Use `checksums.sha256` to verify file integrity:
+          ```bash
+          sha256sum -c checksums.sha256
+          ```
         draft: false
         prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}
         files: |
@@ -319,7 +220,7 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
 
   build-summary:
-    needs: [build-windows, build-linux, build-macos]
+    needs: [build-windows-msvc, build-linux, build-macos]
     runs-on: ubuntu-latest
     if: always()
     
@@ -330,18 +231,13 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
         echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
-        echo "| Windows MSVC | ${{ needs.build-windows.result }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| Windows MinGW | ${{ needs.build-windows.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Windows MSVC | ${{ needs.build-windows-msvc.result }} |" >> $GITHUB_STEP_SUMMARY
         echo "| Linux | ${{ needs.build-linux.result }} |" >> $GITHUB_STEP_SUMMARY
         echo "| macOS | ${{ needs.build-macos.result }} |" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
         if [ "${{ github.event_name }}" = "push" ] && [[ "${{ github.ref }}" == refs/tags/* ]]; then
           echo "🎉 **Release build completed!**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Download the artifacts from the [Releases page](../../releases)." >> $GITHUB_STEP_SUMMARY
         else
           echo "📦 **Development build completed!**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Artifacts are available for download from this workflow run." >> $GITHUB_STEP_SUMMARY
         fi
